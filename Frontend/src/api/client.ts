@@ -29,6 +29,9 @@ type CommitmentResponse = {
   reference_number?: string | null;
   institution?: string | null;
   current_balance?: string | null;
+  statement_balance?: string | null;
+  statement_day?: number | null;
+  payment_grace_days?: number | null;
   interest_rate?: string | null;
   category?: string | null;
   maturity_date?: string | null;

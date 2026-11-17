@@ -49,11 +49,6 @@ export interface ApiClient {
     maturity_date?: string | null;
     notes?: string | null;
   }): Promise<CommitmentRecord>;
-    interest_rate?: string | null;
-    category?: string | null;
-    maturity_date?: string | null;
-    notes?: string | null;
-  }): Promise<CommitmentRecord>;
   deleteCommitment(commitmentId: string): Promise<{ id: string; deleted: boolean }>;
   recordCommitmentPayment(commitmentId: string, occurrenceId: string, input: { amount: string; account_id: string; paid_at: string; idempotency_key: string }): Promise<{ amount: string; remaining_due: string }>;
   reversePayment(paymentId: string, input: { reason: string; idempotency_key: string }): Promise<{ reversed: boolean; reason: string }>;

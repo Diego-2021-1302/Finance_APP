@@ -494,12 +494,12 @@ function CommitmentsPage() {
           {commitmentType === 'credit_card' ? <>
             <Field label="Referencia (últimos 4 dígitos)" required><Input name="reference_number" defaultValue={editingCommitment.referenceNumber ?? ''} required maxLength={4} inputMode="numeric" pattern="[0-9]{4}" /></Field>
             <Field label="Banco emisor" required><Input name="institution" defaultValue={editingCommitment.institution ?? ''} required maxLength={160} /></Field>
-            <Field label="Balance a la fecha (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={Number((editingCommitment.currentBalance ?? '0').replace(/[^\d.]/g, '')) || 0} required /></Field>
-            <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue={editingCommitment.statementDay ?? 15} required /></Field>
-            <Field label="Días para pago / Vencimiento de pago" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue={editingCommitment.paymentGraceDays ?? 21} required /></Field>
-            <Field label="Balance al corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" defaultValue={Number((editingCommitment.statementBalance ?? '0').replace(/[^\d.]/g, '')) || 0} /></Field>
+            <Field label="Balance a la fecha (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={String(Number((editingCommitment.currentBalance ?? '0').replace(/[^\d.]/g, '')) || 0)} required /></Field>
+            <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue={String(editingCommitment.statementDay ?? 15)} required /></Field>
+            <Field label="Días para pago / Vencimiento de pago" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue={String(editingCommitment.paymentGraceDays ?? 21)} required /></Field>
+            <Field label="Balance al corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" defaultValue={String(Number((editingCommitment.statementBalance ?? '0').replace(/[^\d.]/g, '')) || 0)} /></Field>
           </> : <>
-            <Field label="Monto a pagar (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={Number(editingCommitment.amount.replace(/[^\d.]/g, '')) || 0} required /></Field>
+            <Field label="Monto a pagar (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={String(Number(editingCommitment.amount.replace(/[^\d.]/g, '')) || 0)} required /></Field>
             <Field label="Frecuencia de pago" required><select name="frequency" defaultValue="monthly"><option value="monthly">Mensual</option><option value="once">Una sola vez</option><option value="weekly">Semanal</option><option value="biweekly">Cada dos semanas</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select></Field>
             <Field label="Próxima fecha de vencimiento" required><Input name="next_due_date" type="date" defaultValue={today} required /></Field>
           </>}
