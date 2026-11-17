@@ -1,0 +1,347 @@
+openapi: 3.0.3
+info:
+  title: Finanzas Clara API
+  version: 1.0.0
+  description: Personal finance API. Financial records are scoped to the authenticated user.
+servers:
+  - url: http://localhost:8021
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      security: []
+      responses:
+        "200": { description: API and database health }
+        "503": { description: Essential dependency is unavailable }
+  /api/v1/auth/register:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, password_confirmation]
+              properties:
+                name: { type: string, maxLength: 100 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12, writeOnly: true }
+                password_confirmation: { type: string, writeOnly: true }
+      responses:
+        "201": { description: Account created; sign in to create a persistent device session }
+        "409": { description: Email conflict }
+        "422": { description: Invalid fields }
+  /api/v1/auth/login:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, device_id]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, writeOnly: true }
+                device_id: { type: string, format: uuid }
+      responses:
+        "200": { description: Authenticated on this device with a token that remains valid until logout }
+        "401": { description: Invalid credentials }
+        "422": { description: Invalid fields }
+  /api/v1/auth/me:
+    get:
+      responses:
+        "200": { description: Current user }
+        "401": { description: Unauthenticated }
+  /api/v1/auth/logout:
+    post:
+      responses:
+        "200": { description: Current device token revoked }
+        "401": { description: Unauthenticated }
+  /api/v1/dashboard/summary:
+    get:
+      responses:
+        "200": { description: Confirmed balances, forecast totals, and upcoming due items }
+  /api/v1/incomes:
+    get:
+      parameters:
+        - { in: query, name: from, schema: { type: string, format: date } }
+        - { in: query, name: to, schema: { type: string, format: date } }
+        - { in: query, name: status, schema: { type: string, enum: [expected, partially_received, received] } }
+      responses:
+        "200": { description: Income forecast and receipt list }
+        "422": { description: Invalid filters }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, amount, expected_date]
+              properties:
+                source: { type: string, maxLength: 160 }
+                amount: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$' }
+                expected_date: { type: string, format: date }
+      responses:
+        "201": { description: Forecast created }
+        "422": { description: Invalid fields }
+  /api/v1/accounts:
+    get:
+      responses:
+        "200": { description: The authenticated user's active accounts and ledger balances }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, currency, opening_balance]
+              properties:
+                name: { type: string, maxLength: 160 }
+                institution: { type: string, maxLength: 160, nullable: true }
+                type: { type: string, enum: [checking, savings, cash, other] }
+                currency: { type: string, enum: [DOP] }
+                opening_balance: { type: string }
+      responses:
+        "201": { description: Account created with its opening ledger balance }
+        "422": { description: Invalid fields }
+  /api/v1/incomes/{income}/receipts:
+    post:
+      parameters:
+        - { in: path, name: income, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, account_id, received_at, idempotency_key]
+              properties:
+                amount: { type: string }
+                account_id: { type: integer, minimum: 1 }
+                received_at: { type: string, format: date }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "201": { description: Receipt recorded with updated balance }
+        "404": { description: Income or account not found }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid fields or amount }
+  /api/v1/commitments:
+    get:
+      responses:
+        "200": { description: Recurring commitments and independent due instances }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, amount, frequency, next_due_date]
+              properties:
+                name: { type: string, maxLength: 160 }
+                type: { type: string, enum: [loan, credit_card, utility, subscription, insurance, rent, other], description: "Defaults to other when omitted. Loan and credit-card types require reference_number, institution, current_balance, and interest_rate; loans also require maturity_date. Utility, subscription, and insurance types require category. Loan/card balances accrue interest per payment period and are recalculated when payments are reversed." }
+                amount: { type: string }
+                frequency: { type: string, enum: [once, weekly, biweekly, monthly, quarterly, yearly] }
+                next_due_date: { type: string, format: date }
+                reference_number: { type: string, maxLength: 80, nullable: true }
+                institution: { type: string, maxLength: 160, nullable: true }
+                current_balance: { type: string, nullable: true }
+                interest_rate: { type: string, maximum: 100, nullable: true }
+                category: { type: string, maxLength: 80, nullable: true }
+                maturity_date: { type: string, format: date, nullable: true }
+                notes: { type: string, maxLength: 2000, nullable: true }
+      responses:
+        "201": { description: Commitment and first due occurrence created }
+        "422": { description: Invalid fields }
+  /api/v1/commitments/{commitment}/occurrences/{occurrence}/payments:
+    post:
+      parameters:
+        - { in: path, name: commitment, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: occurrence, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, account_id, paid_at, idempotency_key]
+              properties:
+                amount: { type: string }
+                account_id: { type: integer, minimum: 1 }
+                paid_at: { type: string, format: date }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "201": { description: Payment recorded with remaining due }
+        "404": { description: Commitment or due instance not found }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid fields or payment }
+  /api/v1/payments/{payment}/reversals:
+    post:
+      parameters:
+        - { in: path, name: payment, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, idempotency_key]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "201": { description: Reversal recorded, original history retained }
+        "404": { description: Payment not found }
+        "409": { description: Payment already reversed }
+        "422": { description: Invalid fields }
+  /api/v1/accounts:
+    get:
+      responses:
+        "200": { description: User accounts with calculated balances }
+  /api/v1/transactions:
+    get:
+      parameters:
+        - { in: query, name: from, schema: { type: string, format: date } }
+        - { in: query, name: to, schema: { type: string, format: date } }
+        - { in: query, name: account_id, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: q, schema: { type: string, maxLength: 120 } }
+      responses:
+        "200": { description: Paginated movements and payment audit events }
+        "422": { description: Invalid filters }
+  /api/v1/debts:
+    get:
+      responses:
+        "200": { description: Loans and cards with balances and due dates }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, outstanding_amount, minimum_payment, idempotency_key]
+              properties:
+                name: { type: string, maxLength: 160 }
+                kind: { type: string, enum: [loan, credit_card, other] }
+                outstanding_amount: { type: string }
+                minimum_payment: { type: string }
+                due_date: { type: string, format: date, nullable: true }
+                account_id: { type: integer, nullable: true }
+                last_four: { type: string, pattern: '^[0-9]{4}$', nullable: true }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "201": { description: Debt created with an opening-balance history entry }
+        "200": { description: Idempotent replay of a previously created debt }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid fields }
+  /api/v1/debts/history:
+    get:
+      responses:
+        "200": { description: Monthly cumulative debt balances since history activation }
+  /api/v1/debts/{debt}/increases:
+    post:
+      parameters:
+        - { in: path, name: debt, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, occurred_at, idempotency_key]
+              properties:
+                amount: { type: string }
+                description: { type: string, maxLength: 255 }
+                occurred_at: { type: string, format: date-time }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "200": { description: Debt balance increased }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid fields }
+  /api/v1/debts/{debt}/payments:
+    post:
+      parameters:
+        - { in: path, name: debt, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, paid_at, idempotency_key]
+              properties:
+                amount: { type: string }
+                account_id: { type: integer, minimum: 1, nullable: true }
+                paid_at: { type: string, format: date }
+                idempotency_key: { type: string, format: uuid }
+      responses:
+        "201": { description: Debt payment and account transaction recorded }
+        "404": { description: Debt or account not found }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid fields or amount exceeds outstanding balance }
+  /api/v1/insights/recommendations:
+    post:
+      description: Sends the authenticated user's recent financial details to Google Gemini only after explicit request consent. Excludes user identity and account/card identifiers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent]
+              properties:
+                consent: { type: boolean, enum: [true] }
+      responses:
+        "200": { description: Structured financial habits and recommendations }
+        "422": { description: Explicit consent required }
+        "502": { description: Gemini request failed or returned invalid data }
+        "503": { description: Gemini API key is not configured }
+  /api/v1/calendar:
+    get:
+      parameters:
+        - { in: query, name: from, required: true, schema: { type: string, format: date } }
+        - { in: query, name: to, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: Scheduled items in the requested date range }
+        "422": { description: Invalid date range }
+  /api/v1/reports/cash-flow:
+    get:
+      parameters:
+        - { in: query, name: from, required: true, schema: { type: string, format: date } }
+        - { in: query, name: to, required: true, schema: { type: string, format: date } }
+        - { in: query, name: group_by, schema: { type: string, enum: [day, week, month, category] } }
+      responses:
+        "200": { description: Forecast and actual totals by period and category }
+        "422": { description: Invalid query parameters }
+  /api/v1/settings:
+    get:
+      responses:
+        "200": { description: User locale, display, and notification settings }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currency: { type: string, enum: [DOP, USD] }
+                timezone: { type: string }
+                reminders: { type: integer, minimum: 1, maximum: 14 }
+                week_starts: { type: string, enum: [Monday, Sunday] }
+                appearance: { type: string, enum: [light, dark, system] }
+      responses:
+        "200": { description: Preferences updated without changing financial history }
+        "422": { description: Invalid preferences }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum token
