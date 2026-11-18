@@ -222,6 +222,7 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) para obtener la URL activa...');
       const candidateKeys = [
         'finance_app_tunnel_url',
+        'laravel_database_finance_app_tunnel_url',
         'laravel_database_laravel_cache_finance_app_tunnel_url',
       ];
 

@@ -18,7 +18,7 @@ use App\Http\Controllers\Api\V1\TransferController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/health', function () {
+$healthHandler = function () {
     try {
         DB::select('SELECT 1');
         return response()->json(['status' => 'healthy', 'services' => ['database' => 'healthy']]);
@@ -26,13 +26,17 @@ Route::get('/health', function () {
         report($exception);
         return response()->json(['status' => 'unhealthy', 'services' => ['database' => 'unhealthy']], 503);
     }
-});
+};
+
+Route::get('/health', $healthHandler);
+Route::get('/api/health', $healthHandler);
 
 use App\Http\Controllers\Api\V1\TunnelController;
 
 Route::get('/openapi.yaml', fn () => response()->file(base_path('openapi.yaml'), ['Content-Type' => 'application/yaml']));
 
-Route::prefix('v1')->name('api.v1.')->group(function () {
+Route::prefix('v1')->name('api.v1.')->group(function () use ($healthHandler) {
+    Route::get('/health', $healthHandler)->name('health');
     Route::get('/tunnel/active', [TunnelController::class, 'show'])->name('tunnel.active');
     Route::post('/tunnel/register', [TunnelController::class, 'store'])->name('tunnel.register');
 });

@@ -18,7 +18,9 @@ export default async function handler(req, res) {
     const client = createClient({ url: redisUrl });
     await client.connect();
 
-    const rawUrl = (await client.get('finance_app_tunnel_url')) || (await client.get('laravel_database_laravel_cache_finance_app_tunnel_url'));
+    const rawUrl = (await client.get('finance_app_tunnel_url'))
+      || (await client.get('laravel_database_finance_app_tunnel_url'))
+      || (await client.get('laravel_database_laravel_cache_finance_app_tunnel_url'));
     await client.disconnect();
 
     if (!rawUrl) {
