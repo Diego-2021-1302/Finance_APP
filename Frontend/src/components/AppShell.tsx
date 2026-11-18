@@ -5,7 +5,7 @@ import {
 import {
   HomeRegular, MoneyRegular, CalendarRegular, ArrowSwapRegular,
   DataBarVerticalRegular, SettingsRegular, SearchRegular, AlertRegular,
-  WalletRegular, NavigationRegular, DismissRegular,
+  WalletRegular, NavigationRegular, DismissRegular, ChatRegular,
 } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
@@ -13,6 +13,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 
 const navItems = [
   { to: '/', label: 'Tablero', icon: <HomeRegular /> },
+  { to: '/chat', label: 'Asistente IA', icon: <ChatRegular /> },
   { to: '/accounts', label: 'Cuentas', icon: <WalletRegular /> },
   { to: '/income', label: 'Ingresos', icon: <MoneyRegular /> },
   { to: '/expenses', label: 'Gastos Directos', icon: <MoneyRegular /> },
@@ -30,6 +31,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const pageTitle = navItems.find((item) => item.to === location.pathname)?.label ?? 'Espacio de trabajo financiero';
 
@@ -47,9 +49,17 @@ export function AppShell() {
           icon={mobileMenuOpen ? <DismissRegular /> : <NavigationRegular />}
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         />
+        <ToolbarButton
+          className="desktop-only"
+          aria-label="Alternar menú lateral"
+          title={sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'}
+          icon={<NavigationRegular />}
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          style={{ marginRight: '6px' }}
+        />
         <Link to="/" className="brand">
-          <span className="brand-mark">FC</span>
-          <span>FINANZAS CLARA</span>
+          <img src="/logo.png" alt="Ghost Finance" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', boxShadow: '0 0 14px rgba(0, 210, 255, 0.6)', border: '1px solid rgba(0, 210, 255, 0.4)' }} />
+          <span>GHOST FINANCE</span>
         </Link>
       </div>
       <Toolbar aria-label="Barra de herramientas de la aplicación">
@@ -73,11 +83,11 @@ export function AppShell() {
     )}
 
     <div className="workspace">
-      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <Body1 className="nav-caption">Espacio de trabajo</Body1>
         <TabList vertical selectedValue={location.pathname} aria-label="Navegación principal">
           {navItems.map((item) => (
-            <Tab key={item.to} value={item.to} icon={item.icon} onClick={() => handleNavClick(item.to)}>
+            <Tab key={item.to} value={item.to} icon={item.icon} title={sidebarCollapsed ? item.label : undefined} onClick={() => handleNavClick(item.to)}>
               {item.label}
             </Tab>
           ))}
@@ -92,7 +102,7 @@ export function AppShell() {
           </div>
           <Button appearance="subtle" size="small" onClick={logout}>Salir</Button>
         </div>
-        <div className="sidebar-footer">Espacio personal · DOP</div>
+        <div className="sidebar-footer">GHOST FINANCE · DOP</div>
       </aside>
 
       <main className="page-main">

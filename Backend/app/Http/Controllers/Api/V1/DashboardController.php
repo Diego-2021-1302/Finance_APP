@@ -22,6 +22,7 @@ class DashboardController extends Controller
 
         $data = Cache::remember($cacheKey, 10, function () use ($user, $money) {
             $confirmed = (string) FinancialTransaction::query()->where('user_id', $user->id)->sum('amount');
+            $totalDebt = (string) \App\Models\Debt::query()->where('user_id', $user->id)->sum('outstanding_amount');
             $startOfMonth = now()->startOfMonth();
             $endOfMonth = now()->endOfMonth();
 
@@ -55,6 +56,7 @@ class DashboardController extends Controller
             return [
                 'balances' => [
                     'confirmed' => $money->dop($confirmed),
+                    'totalDebt' => $money->dop($totalDebt),
                     'accountCount' => Account::query()->where('user_id', $user->id)->where('is_active', true)->count(),
                 ],
                 'income' => [

@@ -5,7 +5,7 @@ export interface User {
 }
 
 export interface DashboardSummary {
-  balances: { confirmed: string; accountCount: number };
+  balances: { confirmed: string; totalDebt?: string; accountCount: number };
   income: { expected: string; received: string };
   commitments: { dueSoon: string; dueSoonLabel: string };
   upcoming: Array<{ label: string; dueDate: string; amount: string; kind: string }>;

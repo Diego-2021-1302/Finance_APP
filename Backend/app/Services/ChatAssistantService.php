@@ -416,7 +416,7 @@ SUMMARY;
         $today = now()->toDateString();
 
         return <<<PROMPT
-Eres el Agente de Finanzas Personal de Finanzas Clara (República Dominicana).
+Eres el Agente de Finanzas Personal de Ghost Finance (República Dominicana).
 Tu objetivo es responder de forma 100% NATURAL, HUMANA, AMABLE Y CONCISA en español (RD$).
 
 INSTRUCCIONES CLAVE DE CONVERSACIÓN Y EXTRACCIÓN DE FECHAS:

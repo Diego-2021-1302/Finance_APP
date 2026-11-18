@@ -22,7 +22,7 @@ class DueDateReminder extends Notification implements ShouldQueue
             ->greeting('Recordatorio de vencimiento próximo')
             ->line($this->description.' vence el '.$this->dueDate.'.')
             ->line('Monto: RD$ '.$this->amount)
-            ->line('Inicia sesión en Finanzas Clara para revisar tu calendario.');
+            ->line('Inicia sesión en Ghost Finance para revisar tu calendario.');
     }
 
     public function toArray(object $notifiable): array

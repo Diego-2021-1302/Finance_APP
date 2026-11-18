@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
+import { ChatPage } from './pages/ChatPage';
 import { RecordsPage } from './pages/RecordsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -49,6 +50,7 @@ function AuthRoutes() {
     <Route path="/create-account" element={user ? <Navigate to="/" replace /> : <CreateAccountPage />} />
     <Route element={user ? <AppShell /> : <Navigate to="/login" replace />}>
       <Route path="/" element={<DashboardPage />} />
+      <Route path="/chat" element={<ChatPage />} />
       <Route path="/income" element={<RecordsPage kind="income" />} />
       <Route path="/expenses" element={<RecordsPage kind="expenses" />} />
       <Route path="/transfers" element={<RecordsPage kind="transfers" />} />

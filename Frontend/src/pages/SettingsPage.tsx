@@ -36,7 +36,7 @@ export function SettingsPage() {
     {save.isError && <MessageBar intent="error"><MessageBarBody>{save.error.message}</MessageBarBody></MessageBar>}
     <section className="settings-grid">
       <Card className="content-card settings-card">
-        <div><Subtitle1>Regional preferences</Subtitle1><Caption1>Reminder dates use your selected time zone. DOP is the account base currency.</Caption1></div>
+        <div style={{ display: 'grid', gap: '4px' }}><Subtitle1>Regional preferences</Subtitle1><Caption1>Reminder dates use your selected time zone. DOP is the account base currency.</Caption1></div>
         <Field label="Time zone"><select value={draft.timezone} onChange={(event) => update('timezone', event.target.value)}><option value="America/Santo_Domingo">America/Santo_Domingo</option><option value="America/New_York">America/New_York</option></select></Field>
         <Field label="Week starts"><select value={draft.weekStarts} onChange={(event) => update('weekStarts', event.target.value)}><option value="Monday">Monday</option><option value="Sunday">Sunday</option></select></Field>
         <Field label="Reminder days before due date"><Input type="number" min={1} max={14} value={String(draft.reminders)} onChange={(event) => update('reminders', Number(event.target.value))} /></Field>
@@ -45,7 +45,7 @@ export function SettingsPage() {
         {saved && <Caption1>Preferences saved.</Caption1>}
       </Card>
       <Card className="content-card settings-card">
-        <div><Subtitle1>Reminders and privacy</Subtitle1><Caption1>Due-date reminder emails use the number of advance days configured here.</Caption1></div>
+        <div style={{ display: 'grid', gap: '4px' }}><Subtitle1>Reminders and privacy</Subtitle1><Caption1>Due-date reminder emails use the number of advance days configured here.</Caption1></div>
         <div className="security-callout"><strong>Reminder schedule</strong><Caption1>The backend checks daily at 08:00 Santo Domingo time. Email delivery also requires a working mail service configuration.</Caption1></div>
         <div className="security-callout"><strong>Account security</strong><Caption1>Your session stays active on this browser until you explicitly sign out. Never store full card numbers in this application.</Caption1></div>
       </Card>

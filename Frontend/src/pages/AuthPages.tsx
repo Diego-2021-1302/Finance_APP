@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Card, Field, Input, MessageBar, MessageBarBody, Subtitle1 } from '@fluentui/react-components';
+import { Button, Card, Field, Input, MessageBar, MessageBarBody } from '@fluentui/react-components';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '../auth/AuthContext';
+import { useAppTheme } from '../theme/ThemeContext';
 
 const loginSchema = z.object({
   email: z.string().email('Ingresa un correo electrónico válido'),
@@ -35,20 +36,20 @@ export function LoginPage() {
     }
   });
 
-  return <AuthCard title="Bienvenido de nuevo" subtitle="Inicia sesión en tu espacio privado de finanzas">
+  return <AuthCard>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <form onSubmit={submit} className="auth-form">
       <Field label="Correo electrónico" validationMessage={form.formState.errors.email?.message}>
-        <Input type="email" autoComplete="email" {...form.register('email')} />
+        <Input type="email" autoComplete="email" {...form.register('email')} placeholder="tucorreo@dominio.com" />
       </Field>
       <Field label="Contraseña" validationMessage={form.formState.errors.password?.message}>
-        <Input type="password" autoComplete="current-password" {...form.register('password')} />
+        <Input type="password" autoComplete="current-password" {...form.register('password')} placeholder="••••••••" />
       </Field>
       <Button appearance="primary" type="submit" disabled={form.formState.isSubmitting}>
-        Iniciar sesión
+        {form.formState.isSubmitting ? 'Iniciando sesión…' : 'Iniciar sesión'}
       </Button>
     </form>
-    <Link className="create-account-link" to="/create-account">Crear cuenta nueva</Link>
+    <Link className="create-account-link" to="/create-account">¿No tienes cuenta? Crear cuenta nueva</Link>
   </AuthCard>;
 }
 
@@ -71,42 +72,61 @@ export function CreateAccountPage() {
     }
   });
 
-  return <AuthCard title="Crea tu cuenta" subtitle="Tu información financiera se mantiene privada y segura">
+  return <AuthCard>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-    {complete ? <div className="auth-form">
-      <p>Tu cuenta está lista. Inicia sesión para continuar.</p>
-      <Button appearance="primary" onClick={() => navigate('/login')}>Continuar al inicio de sesión</Button>
+    {complete ? <div className="auth-form" style={{ textAlign: 'center', padding: '20px 0' }}>
+      <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--text)' }}>Tu cuenta está lista. Inicia sesión para continuar.</p>
+      <Button appearance="primary" onClick={() => navigate('/login')} style={{ width: '100%' }}>Continuar al inicio de sesión</Button>
     </div> :
       <form onSubmit={submit} className="auth-form">
         <Field label="Nombre completo" validationMessage={form.formState.errors.name?.message}>
-          <Input autoComplete="name" {...form.register('name')} />
+          <Input autoComplete="name" {...form.register('name')} placeholder="Tu nombre" />
         </Field>
         <Field label="Correo electrónico" validationMessage={form.formState.errors.email?.message}>
-          <Input type="email" autoComplete="email" {...form.register('email')} />
+          <Input type="email" autoComplete="email" {...form.register('email')} placeholder="tucorreo@dominio.com" />
         </Field>
         <Field label="Contraseña (mínimo 12 caracteres)" validationMessage={form.formState.errors.password?.message}>
-          <Input type="password" autoComplete="new-password" {...form.register('password')} />
+          <Input type="password" autoComplete="new-password" {...form.register('password')} placeholder="••••••••••••" />
         </Field>
         <Button appearance="primary" type="submit" disabled={form.formState.isSubmitting}>
-          Crear cuenta
+          {form.formState.isSubmitting ? 'Creando cuenta…' : 'Crear cuenta'}
         </Button>
       </form>}
-    <Link className="create-account-link" to="/login">Volver a inicio de sesión</Link>
+    <Link className="create-account-link" to="/login">¿Ya tienes cuenta? Iniciar sesión</Link>
   </AuthCard>;
 }
 
-import { useAppTheme } from '../theme/ThemeContext';
-
-function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+function AuthCard({ children }: { children: ReactNode }) {
   const { isDark } = useAppTheme();
   return <main className={isDark ? 'auth-screen dark' : 'auth-screen'}>
-    <Card className="auth-card">
-      <div className="brand auth-brand">
-        <span className="brand-mark">FC</span>
-        <span>Finanzas Clara</span>
+    <Card className="auth-card" style={{ padding: '44px 38px', textAlign: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', marginBottom: '22px' }}>
+        <img
+          src="/logo.png"
+          alt="Ghost Finance"
+          style={{
+            width: '84px',
+            height: '84px',
+            borderRadius: '50%',
+            objectFit: 'cover',
+            boxShadow: '0 0 35px rgba(0, 210, 255, 0.85)',
+            border: '2px solid rgba(0, 210, 255, 0.6)',
+          }}
+        />
+        <span
+          style={{
+            fontSize: '22px',
+            fontWeight: 850,
+            letterSpacing: '-0.03em',
+            background: 'linear-gradient(135deg, #00d2ff 0%, #38bdf8 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            textTransform: 'uppercase',
+          }}
+        >
+          GHOST FINANCE
+        </span>
       </div>
-      <Subtitle1>{title}</Subtitle1>
-      <p>{subtitle}</p>
       {children}
     </Card>
   </main>;
