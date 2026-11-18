@@ -42,3 +42,10 @@
 {"level":"info","run_id":"fb10fee3-0296-4d04-a95d-bff04270128a","hard_fail":false,"suggested_protocol":"quic","time":"2026-11-18T15:32:22Z","message":"precheck complete"}
 {"level":"info","event":0,"connection":"0cff4823-793b-4bc4-8402-898cfe2370a3","connIndex":0,"location":"mia10","ip":"2606:4700:a0::1","protocol":"quic","time":"2026-11-18T15:32:22Z","message":"Registered tunnel connection"}
 {"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-18T15:32:27Z","message":"Failed to initialize DNS local resolver"}
+{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-18T15:47:32Z","message":"Failed to refresh DNS local resolver"}
+{"level":"info","time":"2026-11-18T16:08:00Z","message":"Initiating graceful shutdown due to signal terminated ..."}
+{"level":"info","event":0,"ip":"2606:4700:a0::1","connIndex":0,"time":"2026-11-18T16:08:00Z","message":"Retrying connection in up to 2s"}
+{"level":"error","connIndex":0,"time":"2026-11-18T16:08:00Z","message":"Connection terminated"}
+{"level":"error","time":"2026-11-18T16:08:00Z","message":"no more connections active and exiting"}
+{"level":"info","time":"2026-11-18T16:08:00Z","message":"Tunnel server stopped"}
+{"level":"info","time":"2026-11-18T16:08:00Z","message":"Metrics server stopped"}

@@ -162,13 +162,14 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
   if (tunnelResolutionPromise) return tunnelResolutionPromise;
 
   tunnelResolutionPromise = (async () => {
-    // 1. Check if current API base is live
+    // 1. Query Vercel Serverless Function /api/tunnel
+    logApiInfo('🔍', 'Consultando función Serverless de Vercel (/api/tunnel) para leer Redis directamente...');
     try {
-      const currentBase = getApiBaseUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const response = await fetch(`${currentBase}/tunnel/active`, {
+      const response = await fetch('/api/tunnel', {
+        headers: { Accept: 'application/json' },
         signal: controller.signal,
       }).catch(() => null);
 
@@ -177,11 +178,13 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       if (response && response.ok) {
         const data = await response.json().catch(() => null);
         if (data?.tunnel_url && (await verifyTunnelHealth(data.tunnel_url))) {
-          return `${data.tunnel_url.replace(/\/+$/, '')}/api/v1`;
+          const clean = `${data.tunnel_url.replace(/\/+$/, '')}/api/v1`;
+          logApiSuccess('🎉', '¡URL activa de Cloudflare obtenida desde Vercel Serverless (/api/tunnel)!', clean);
+          return clean;
         }
       }
-    } catch {
-      // Ignore
+    } catch (e) {
+      logApiWarn('⚠️', 'Error al consultar /api/tunnel:', e);
     }
 
     // 2. Query Redis REST endpoint if configured in env (supports Vercel KV / Upstash variables)
@@ -211,7 +214,7 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       if (parsed) {
         redisRestUrl = parsed.url;
         redisRestToken = parsed.token;
-        logApiInfo('💡', 'Extraída la URL REST y Token directamente desde la variable REDIS_URL:', redisRestUrl);
+        logApiInfo('💡', 'Extraída la URL REST y Token desde la variable REDIS_URL:', redisRestUrl);
       }
     }
 
