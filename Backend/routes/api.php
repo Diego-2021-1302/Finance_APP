@@ -28,7 +28,14 @@ Route::get('/health', function () {
     }
 });
 
+use App\Http\Controllers\Api\V1\TunnelController;
+
 Route::get('/openapi.yaml', fn () => response()->file(base_path('openapi.yaml'), ['Content-Type' => 'application/yaml']));
+
+Route::prefix('v1')->name('api.v1.')->group(function () {
+    Route::get('/tunnel/active', [TunnelController::class, 'show'])->name('tunnel.active');
+    Route::post('/tunnel/register', [TunnelController::class, 'store'])->name('tunnel.register');
+});
 
 Route::prefix('v1/auth')->name('api.v1.auth.')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('register');

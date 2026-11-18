@@ -45,16 +45,124 @@ type RawSettings = {
   appearance: 'light' | 'dark' | 'system';
 };
 
-const apiBase = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/+$/, '');
+const tunnelUrlStorageKey = 'finance-app.active-tunnel-url';
 const accessTokenStorageKey = 'finance-app.access-token';
 const deviceIdStorageKey = 'finance-app.device-id';
 let accessToken: string | null = globalThis.localStorage.getItem(accessTokenStorageKey);
 let currentUserRequest: Promise<User> | null = null;
+let tunnelResolutionPromise: Promise<string | null> | null = null;
 
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
     this.name = 'ApiRequestError';
+  }
+}
+
+function getApiBaseUrl(): string {
+  const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey);
+  if (cachedUrl) return `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
+
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+
+  return '/api/v1';
+}
+
+async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
+  try {
+    const cleanUrl = candidateUrl.replace(/\/+$/, '');
+    const baseUrl = cleanUrl.endsWith('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const response = await fetch(`${baseUrl}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    }).catch(() => null);
+
+    clearTimeout(timeoutId);
+    if (response && response.ok) {
+      const data = await response.json().catch(() => null);
+      if (data?.status === 'healthy') {
+        const tunnelBase = cleanUrl.replace(/\/api\/v1$/, '');
+        globalThis.localStorage.setItem(tunnelUrlStorageKey, tunnelBase);
+        return true;
+      }
+    }
+  } catch {
+    // Health check failed
+  }
+  return false;
+}
+
+async function fetchActiveTunnelFromGateway(): Promise<string | null> {
+  if (tunnelResolutionPromise) return tunnelResolutionPromise;
+
+  tunnelResolutionPromise = (async () => {
+    // 1. Check if current API base is live
+    try {
+      const currentBase = getApiBaseUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+      const response = await fetch(`${currentBase}/tunnel/active`, {
+        signal: controller.signal,
+      }).catch(() => null);
+
+      clearTimeout(timeoutId);
+
+      if (response && response.ok) {
+        const data = await response.json().catch(() => null);
+        if (data?.tunnel_url && (await verifyTunnelHealth(data.tunnel_url))) {
+          return `${data.tunnel_url.replace(/\/+$/, '')}/api/v1`;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // 2. Query Redis REST endpoint if configured in env (Upstash)
+    const redisRestUrl = import.meta.env.VITE_REDIS_REST_URL;
+    const redisRestToken = import.meta.env.VITE_REDIS_REST_TOKEN;
+
+    if (redisRestUrl && redisRestToken) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const response = await fetch(`${redisRestUrl}/get/active_cloudflare_tunnel_url`, {
+          headers: { Authorization: `Bearer ${redisRestToken}` },
+          signal: controller.signal,
+        }).catch(() => null);
+
+        clearTimeout(timeoutId);
+
+        if (response && response.ok) {
+          const data = await response.json().catch(() => null);
+          if (data?.result && (await verifyTunnelHealth(data.result))) {
+            return `${data.result.replace(/\/+$/, '')}/api/v1`;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    // 3. Fallback to VITE_API_BASE_URL env
+    const envUrl = import.meta.env.VITE_API_BASE_URL;
+    if (envUrl && (await verifyTunnelHealth(envUrl))) {
+      return envUrl.replace(/\/+$/, '');
+    }
+
+    return null;
+  })();
+
+  try {
+    return await tunnelResolutionPromise;
+  } finally {
+    tunnelResolutionPromise = null;
   }
 }
 
@@ -105,22 +213,43 @@ function toUser(user: BackendUser): User {
   return { id: String(user.id), name: user.name, email: user.email };
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body !== undefined) headers.set('Content-Type', 'application/json');
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = typeof payload === 'object' && payload !== null
-      && 'error' in payload && typeof payload.error === 'object' && payload.error !== null
-      && 'message' in payload.error && typeof payload.error.message === 'string'
-      ? payload.error.message
-      : `La solicitud falló (${response.status})`;
-    throw new ApiRequestError(message, response.status);
+
+  const currentApiBase = getApiBaseUrl();
+
+  try {
+    const response = await fetch(`${currentApiBase}${path}`, { ...init, headers });
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      if ((response.status === 502 || response.status === 503) && !isRetry) {
+        const newApiBase = await fetchActiveTunnelFromGateway();
+        if (newApiBase) {
+          return request<T>(path, init, true);
+        }
+      }
+
+      const message = typeof payload === 'object' && payload !== null
+        && 'error' in payload && typeof payload.error === 'object' && payload.error !== null
+        && 'message' in payload.error && typeof payload.error.message === 'string'
+        ? payload.error.message
+        : `La solicitud falló (${response.status})`;
+      throw new ApiRequestError(message, response.status);
+    }
+    return payload as T;
+  } catch (error) {
+    if (!isRetry && (error instanceof TypeError || (error instanceof ApiRequestError && error.status >= 500))) {
+      const newApiBase = await fetchActiveTunnelFromGateway();
+      if (newApiBase) {
+        return request<T>(path, init, true);
+      }
+    }
+    throw error;
   }
-  return payload as T;
 }
 
 function jsonBody(value: unknown): string {
