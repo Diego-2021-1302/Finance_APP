@@ -350,8 +350,9 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
     if (!response.ok) {
       logApiWarn('⚠️', `Respuesta HTTP ${response.status} desde:`, targetUrl);
 
-      if ((response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503 || response.status === 504) && !isRetry) {
-        logApiWarn('🔄', `Solicitud falló con HTTP ${response.status}. Buscando nueva URL activa del túnel de Cloudflare en Redis...`);
+      if ((response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503 || response.status === 504 || response.status === 530) && !isRetry) {
+        logApiWarn('🔄', `Solicitud falló con HTTP ${response.status}. Purgando URL caducada de localStorage y buscando túnel activo en Redis...`);
+        globalThis.localStorage.removeItem(tunnelUrlStorageKey);
         const newApiBase = await fetchActiveTunnelFromGateway();
         if (newApiBase) {
           logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud automáticamente:', `${newApiBase}${path}`);
@@ -372,7 +373,8 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   } catch (error) {
     if (!isRetry && (error instanceof TypeError || (error instanceof ApiRequestError && error.status >= 500))) {
       logApiError('💥', 'Error de red o conexión rechazada con:', targetUrl);
-      logApiWarn('🔄', 'Buscando nueva URL del túnel en Redis / Gateway...');
+      logApiWarn('🔄', 'Purgando URL de túnel caducada y buscando túnel activo en Redis...');
+      globalThis.localStorage.removeItem(tunnelUrlStorageKey);
       const newApiBase = await fetchActiveTunnelFromGateway();
       if (newApiBase) {
         logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud:', `${newApiBase}${path}`);

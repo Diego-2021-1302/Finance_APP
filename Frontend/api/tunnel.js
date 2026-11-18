@@ -18,9 +18,25 @@ export default async function handler(req, res) {
     const client = createClient({ url: redisUrl });
     await client.connect();
 
-    const rawUrl = (await client.get('finance_app_tunnel_url'))
-      || (await client.get('laravel_database_finance_app_tunnel_url'))
-      || (await client.get('laravel_database_laravel_cache_finance_app_tunnel_url'));
+    const keys = [
+      'finance_app_tunnel_url',
+      'laravel_database_finance_app_tunnel_url',
+      'laravel_database_laravel_cache_finance_app_tunnel_url',
+    ];
+
+    let foundUrl = null;
+
+    for (const key of keys) {
+      const val = await client.get(key);
+      if (val) {
+        const match = String(val).match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
+        if (match) {
+          foundUrl = match[0];
+          break;
+        }
+      }
+    }
+
     await client.disconnect();
 
     if (!rawUrl) {

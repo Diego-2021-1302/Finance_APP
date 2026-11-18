@@ -69,9 +69,10 @@ class RegisterTunnelUrl extends Command
 
         $this->info('[PASO 2] Guardando URL en la base de datos Redis...');
         try {
-            // Write raw un-prefixed key for REST queries
+            // Overwrite all key variations in Redis so old expired URLs are purged
             \Illuminate\Support\Facades\Redis::connection('default')->set('finance_app_tunnel_url', $url);
-            \Illuminate\Support\Facades\Redis::connection('default')->set('finance_app_tunnel_updated_at', $updatedAt);
+            \Illuminate\Support\Facades\Redis::connection('default')->set('laravel_database_finance_app_tunnel_url', $url);
+            \Illuminate\Support\Facades\Redis::connection('default')->set('laravel_database_laravel_cache_finance_app_tunnel_url', 's:'.strlen($url).':"'.$url.'";');
 
             Cache::store('redis')->put('finance_app_tunnel_url', $url, now()->addDays(30));
             Cache::store('redis')->put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
