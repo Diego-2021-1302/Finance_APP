@@ -10,48 +10,77 @@ export default async function handler(req, res) {
   }
 
   const redisUrl = process.env.REDIS_URL || process.env.STORAGE_URL || process.env.KV_URL;
-  if (!redisUrl) {
-    return res.status(500).json({ error: 'REDIS_URL variable not set on Vercel' });
+  const restUrl = process.env.STORAGE_REST_API_URL || process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_REST_URL;
+  const restToken = process.env.STORAGE_REST_API_TOKEN || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_REST_TOKEN;
+
+  let rawUrl = null;
+
+  // 1. Try REST API if configured
+  if (restUrl && restToken) {
+    try {
+      const keys = [
+        'finance_app_tunnel_url',
+        'laravel_database_finance_app_tunnel_url',
+        'laravel_database_laravel_cache_finance_app_tunnel_url',
+      ];
+      for (const k of keys) {
+        const response = await fetch(`${restUrl.replace(/\/+$/, '')}/get/${k}`, {
+          headers: { Authorization: `Bearer ${restToken}` },
+        }).catch(() => null);
+
+        if (response && response.ok) {
+          const data = await response.json().catch(() => null);
+          if (data?.result) {
+            rawUrl = data.result;
+            break;
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
   }
 
-  try {
-    const client = createClient({ url: redisUrl });
-    await client.connect();
+  // 2. Try Node Redis Client TCP if REST API didn't return
+  if (!rawUrl && redisUrl) {
+    try {
+      const isTls = redisUrl.startsWith('rediss://');
+      const client = createClient({
+        url: redisUrl,
+        socket: isTls ? { tls: true, rejectUnauthorized: false } : {},
+      });
 
-    const keys = [
-      'finance_app_tunnel_url',
-      'laravel_database_finance_app_tunnel_url',
-      'laravel_database_laravel_cache_finance_app_tunnel_url',
-    ];
-
-    let foundUrl = null;
-
-    for (const key of keys) {
-      const val = await client.get(key);
-      if (val) {
-        const match = String(val).match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
-        if (match) {
-          foundUrl = match[0];
+      await client.connect();
+      const keys = [
+        'finance_app_tunnel_url',
+        'laravel_database_finance_app_tunnel_url',
+        'laravel_database_laravel_cache_finance_app_tunnel_url',
+      ];
+      for (const key of keys) {
+        const val = await client.get(key);
+        if (val) {
+          rawUrl = val;
           break;
         }
       }
+      await client.disconnect().catch(() => null);
+    } catch (err) {
+      if (!rawUrl) {
+        return res.status(500).json({ error: `Redis TCP connection failed: ${err.message}` });
+      }
     }
-
-    await client.disconnect();
-
-    if (!rawUrl) {
-      return res.status(404).json({ error: 'No active tunnel URL found in Redis for key finance_app_tunnel_url' });
-    }
-
-    const match = String(rawUrl).match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
-    const cleanUrl = match ? match[0] : String(rawUrl).replace(/^s:\d+:"/, '').replace(/";$/, '').trim();
-
-    return res.status(200).json({
-      tunnel_url: cleanUrl,
-      api_base_url: `${cleanUrl}/api/v1`,
-      updated_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
   }
+
+  if (!rawUrl) {
+    return res.status(404).json({ error: 'No active tunnel URL found in Redis' });
+  }
+
+  const match = String(rawUrl).match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
+  const cleanUrl = match ? match[0] : String(rawUrl).replace(/^s:\d+:"/, '').replace(/";$/, '').trim();
+
+  return res.status(200).json({
+    tunnel_url: cleanUrl,
+    api_base_url: `${cleanUrl}/api/v1`,
+    updated_at: new Date().toISOString(),
+  });
 }
