@@ -21,7 +21,11 @@ class RegisterTunnelUrl extends Command
             // 1. Try reading cloudflared.log first
             $possibleLogs = [
                 base_path('cloudflared.log'),
+                base_path('cloudflared_err.log'),
+                base_path('cloudflared_out.log'),
                 base_path('../cloudflared.log'),
+                base_path('../cloudflared_err.log'),
+                base_path('../cloudflared_out.log'),
                 base_path('storage/logs/cloudflared.log'),
             ];
 
@@ -65,6 +69,10 @@ class RegisterTunnelUrl extends Command
 
         $this->info('[PASO 2] Guardando URL en la base de datos Redis...');
         try {
+            // Write raw un-prefixed key for REST queries
+            \Illuminate\Support\Facades\Redis::connection('default')->set('finance_app_tunnel_url', $url);
+            \Illuminate\Support\Facades\Redis::connection('default')->set('finance_app_tunnel_updated_at', $updatedAt);
+
             Cache::store('redis')->put('finance_app_tunnel_url', $url, now()->addDays(30));
             Cache::store('redis')->put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
             $this->info('  -> Guardado en Redis local correctamente (clave aislada: finance_app_tunnel_url).');

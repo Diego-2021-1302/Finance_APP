@@ -94,9 +94,21 @@ function getApiBaseUrl(): string {
   return '/api/v1';
 }
 
+function extractCleanUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const match = raw.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
+  if (match) return match[0];
+  const cleaned = raw.replace(/^s:\d+:"/, '').replace(/";$/, '').trim();
+  if (cleaned.startsWith('http')) return cleaned;
+  return null;
+}
+
 async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
   try {
-    const cleanUrl = candidateUrl.replace(/\/+$/, '');
+    const cleanCandidate = extractCleanUrl(candidateUrl);
+    if (!cleanCandidate) return false;
+
+    const cleanUrl = cleanCandidate.replace(/\/+$/, '');
     const baseUrl = cleanUrl.endsWith('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
     logApiInfo('⚡', 'Verificando estado de salud del túnel candidato en:', `${baseUrl}/health`);
 
@@ -174,32 +186,40 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       || envObj.VITE_REDIS_REST_TOKEN;
 
     if (redisRestUrl && redisRestToken) {
-      logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) con clave "finance_app_tunnel_url"...');
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+      logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) para obtener la URL activa...');
+      const candidateKeys = [
+        'finance_app_tunnel_url',
+        'laravel_database_laravel_cache_finance_app_tunnel_url',
+      ];
 
-        const response = await fetch(`${redisRestUrl}/get/finance_app_tunnel_url`, {
-          headers: { Authorization: `Bearer ${redisRestToken}` },
-          signal: controller.signal,
-        }).catch(() => null);
+      for (const keyName of candidateKeys) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-        clearTimeout(timeoutId);
+          const response = await fetch(`${redisRestUrl}/get/${keyName}`, {
+            headers: { Authorization: `Bearer ${redisRestToken}` },
+            signal: controller.signal,
+          }).catch(() => null);
 
-        if (response && response.ok) {
-          const data = await response.json().catch(() => null);
-          const candidate = data?.result;
-          if (candidate) {
-            logApiInfo('🔎', 'URL aislada de Finanzas Clara encontrada en Redis:', candidate);
-            if (await verifyTunnelHealth(candidate)) {
-              const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
-              logApiSuccess('🎉', '¡URL verificada y activa desde Vercel KV / Upstash Redis (FGP)!', clean);
-              return clean;
+          clearTimeout(timeoutId);
+
+          if (response && response.ok) {
+            const data = await response.json().catch(() => null);
+            const rawVal = data?.result;
+            const candidate = extractCleanUrl(rawVal);
+            if (candidate) {
+              logApiInfo('🔎', `URL aislada de Finanzas Clara encontrada en Redis (clave: ${keyName}):`, candidate);
+              if (await verifyTunnelHealth(candidate)) {
+                const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
+                logApiSuccess('🎉', '¡URL verificada y activa desde Vercel KV / Upstash Redis (FGP)!', clean);
+                return clean;
+              }
             }
           }
+        } catch (e) {
+          logApiWarn('⚠️', `Error al consultar Vercel KV / Upstash Redis key "${keyName}":`, e);
         }
-      } catch (e) {
-        logApiWarn('⚠️', 'Error al consultar Vercel KV / Upstash Redis REST:', e);
       }
     }
 
