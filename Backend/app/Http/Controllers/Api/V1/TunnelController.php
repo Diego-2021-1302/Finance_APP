@@ -11,13 +11,14 @@ class TunnelController extends Controller
 {
     public function show(): JsonResponse
     {
-        $url = Cache::store('redis')->get('active_cloudflare_tunnel_url')
+        $url = Cache::store('redis')->get('finance_app_tunnel_url')
+            ?? Cache::get('finance_app_tunnel_url')
             ?? config('app.url');
 
         return response()->json([
             'tunnel_url' => $url,
             'api_base_url' => rtrim($url, '/').'/api/v1',
-            'updated_at' => Cache::store('redis')->get('active_cloudflare_tunnel_updated_at') ?? now()->toIso8601String(),
+            'updated_at' => Cache::store('redis')->get('finance_app_tunnel_updated_at') ?? now()->toIso8601String(),
         ]);
     }
 
@@ -30,8 +31,8 @@ class TunnelController extends Controller
         $url = rtrim($validated['tunnel_url'], '/');
         $updatedAt = now()->toIso8601String();
 
-        Cache::store('redis')->put('active_cloudflare_tunnel_url', $url, now()->addDays(30));
-        Cache::store('redis')->put('active_cloudflare_tunnel_updated_at', $updatedAt, now()->addDays(30));
+        Cache::store('redis')->put('finance_app_tunnel_url', $url, now()->addDays(30));
+        Cache::store('redis')->put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
 
         return response()->json([
             'data' => [

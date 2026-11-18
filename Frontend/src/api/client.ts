@@ -59,13 +59,38 @@ export class ApiRequestError extends Error {
   }
 }
 
+function logApiInfo(emoji: string, message: string, detail?: unknown) {
+  console.info(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #2563eb; font-weight: bold;', detail ?? '');
+}
+
+function logApiSuccess(emoji: string, message: string, detail?: unknown) {
+  console.log(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #0d9488; font-weight: bold;', detail ?? '');
+}
+
+function logApiWarn(emoji: string, message: string, detail?: unknown) {
+  console.warn(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #d97706; font-weight: bold;', detail ?? '');
+}
+
+function logApiError(emoji: string, message: string, detail?: unknown) {
+  console.error(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #dc2626; font-weight: bold;', detail ?? '');
+}
+
 function getApiBaseUrl(): string {
   const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey);
-  if (cachedUrl) return `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
+  if (cachedUrl) {
+    const clean = `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
+    logApiInfo('📍', 'Usando URL del Backend guardada en caché (localStorage):', clean);
+    return clean;
+  }
 
   const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl) return envUrl.replace(/\/+$/, '');
+  if (envUrl) {
+    const clean = envUrl.replace(/\/+$/, '');
+    logApiInfo('⚙️', 'Usando URL del Backend desde variable de entorno VITE_API_BASE_URL:', clean);
+    return clean;
+  }
 
+  logApiWarn('⚠️', 'No hay URL del Backend en caché ni en variable de entorno. Usando fallback por defecto: /api/v1');
   return '/api/v1';
 }
 
@@ -73,6 +98,8 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
   try {
     const cleanUrl = candidateUrl.replace(/\/+$/, '');
     const baseUrl = cleanUrl.endsWith('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
+    logApiInfo('⚡', 'Verificando estado de salud del túnel candidato en:', `${baseUrl}/health`);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -88,12 +115,14 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
       if (data?.status === 'healthy') {
         const tunnelBase = cleanUrl.replace(/\/api\/v1$/, '');
         globalThis.localStorage.setItem(tunnelUrlStorageKey, tunnelBase);
+        logApiSuccess('✅', '¡Salud del túnel VERIFICADA con éxito!', tunnelBase);
         return true;
       }
     }
   } catch {
     // Health check failed
   }
+  logApiError('❌', 'Verificación de salud fallida para el túnel:', candidateUrl);
   return false;
 }
 
@@ -123,16 +152,24 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       // Ignore
     }
 
-    // 2. Query Redis REST endpoint if configured in env (Upstash)
-    const redisRestUrl = import.meta.env.VITE_REDIS_REST_URL;
-    const redisRestToken = import.meta.env.VITE_REDIS_REST_TOKEN;
+    // 2. Query Redis REST endpoint if configured in env (supports Vercel KV / Upstash variables)
+    const redisRestUrl = import.meta.env.VITE_STORAGE_REST_API_URL
+      || import.meta.env.VITE_KV_REST_API_URL
+      || import.meta.env.VITE_UPSTASH_REDIS_REST_URL
+      || import.meta.env.VITE_REDIS_REST_URL;
+
+    const redisRestToken = import.meta.env.VITE_STORAGE_REST_API_TOKEN
+      || import.meta.env.VITE_KV_REST_API_TOKEN
+      || import.meta.env.VITE_UPSTASH_REDIS_REST_TOKEN
+      || import.meta.env.VITE_REDIS_REST_TOKEN;
 
     if (redisRestUrl && redisRestToken) {
+      logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) con clave "finance_app_tunnel_url"...');
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-        const response = await fetch(`${redisRestUrl}/get/active_cloudflare_tunnel_url`, {
+        const response = await fetch(`${redisRestUrl}/get/finance_app_tunnel_url`, {
           headers: { Authorization: `Bearer ${redisRestToken}` },
           signal: controller.signal,
         }).catch(() => null);
@@ -141,12 +178,18 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
 
         if (response && response.ok) {
           const data = await response.json().catch(() => null);
-          if (data?.result && (await verifyTunnelHealth(data.result))) {
-            return `${data.result.replace(/\/+$/, '')}/api/v1`;
+          const candidate = data?.result;
+          if (candidate) {
+            logApiInfo('🔎', 'URL aislada de Finanzas Clara encontrada en Redis:', candidate);
+            if (await verifyTunnelHealth(candidate)) {
+              const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
+              logApiSuccess('🎉', '¡URL verificada y activa desde Vercel KV / Upstash Redis (FGP)!', clean);
+              return clean;
+            }
           }
         }
-      } catch {
-        // Ignore
+      } catch (e) {
+        logApiWarn('⚠️', 'Error al consultar Vercel KV / Upstash Redis REST:', e);
       }
     }
 
@@ -214,21 +257,40 @@ function toUser(user: BackendUser): User {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
+  let currentApiBase = getApiBaseUrl();
+
+  // If executing on Vercel and current API base is relative (/api/v1), auto-discover active tunnel before request!
+  if (currentApiBase.startsWith('/api/v1') && globalThis.location?.hostname?.includes('vercel.app')) {
+    logApiWarn('🔍', 'Ejecutando en Vercel con URL relativa. Buscando túnel Cloudflare activo en Vercel KV / Upstash Redis...');
+    const discovered = await fetchActiveTunnelFromGateway();
+    if (discovered) {
+      currentApiBase = discovered;
+      logApiSuccess('⚡', '¡Túnel activo configurado para Vercel!', currentApiBase);
+    } else {
+      logApiError('❌', 'No se pudo descubrir una URL de túnel activa en Vercel.');
+    }
+  }
+
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body !== undefined) headers.set('Content-Type', 'application/json');
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
-  const currentApiBase = getApiBaseUrl();
+  const targetUrl = `${currentApiBase}${path}`;
+  logApiInfo('🚀', `Enviando solicitud ${init.method ?? 'GET'} a:`, targetUrl);
 
   try {
-    const response = await fetch(`${currentApiBase}${path}`, { ...init, headers });
+    const response = await fetch(targetUrl, { ...init, headers });
     const payload: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {
-      if ((response.status === 502 || response.status === 503) && !isRetry) {
+      logApiWarn('⚠️', `Respuesta HTTP ${response.status} desde:`, targetUrl);
+
+      if ((response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503 || response.status === 504) && !isRetry) {
+        logApiWarn('🔄', `Solicitud falló con HTTP ${response.status}. Buscando nueva URL activa del túnel de Cloudflare en Redis...`);
         const newApiBase = await fetchActiveTunnelFromGateway();
         if (newApiBase) {
+          logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud automáticamente:', `${newApiBase}${path}`);
           return request<T>(path, init, true);
         }
       }
@@ -240,11 +302,16 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
         : `La solicitud falló (${response.status})`;
       throw new ApiRequestError(message, response.status);
     }
+
+    logApiSuccess('✨', `Respuesta exitosa (200 OK) desde:`, targetUrl);
     return payload as T;
   } catch (error) {
     if (!isRetry && (error instanceof TypeError || (error instanceof ApiRequestError && error.status >= 500))) {
+      logApiError('💥', 'Error de red o conexión rechazada con:', targetUrl);
+      logApiWarn('🔄', 'Buscando nueva URL del túnel en Redis / Gateway...');
       const newApiBase = await fetchActiveTunnelFromGateway();
       if (newApiBase) {
+        logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud:', `${newApiBase}${path}`);
         return request<T>(path, init, true);
       }
     }

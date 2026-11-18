@@ -59,31 +59,32 @@ class RegisterTunnelUrl extends Command
 
         $this->info('[PASO 2] Guardando URL en la base de datos Redis...');
         try {
-            Cache::store('redis')->put('active_cloudflare_tunnel_url', $url, now()->addDays(30));
-            Cache::store('redis')->put('active_cloudflare_tunnel_updated_at', $updatedAt, now()->addDays(30));
-            $this->info('  -> Guardado en Redis local correctamente (clave: active_cloudflare_tunnel_url).');
+            Cache::store('redis')->put('finance_app_tunnel_url', $url, now()->addDays(30));
+            Cache::store('redis')->put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
+            $this->info('  -> Guardado en Redis local correctamente (clave aislada: finance_app_tunnel_url).');
         } catch (\Throwable $e) {
             $this->warn('  -> Redis local no respondio. Guardando en cache de respaldo...');
-            Cache::put('active_cloudflare_tunnel_url', $url, now()->addDays(30));
-            Cache::put('active_cloudflare_tunnel_updated_at', $updatedAt, now()->addDays(30));
+            Cache::put('finance_app_tunnel_url', $url, now()->addDays(30));
+            Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
         }
 
-        // Optional Upstash Redis REST sync if env configured
-        $upstashUrl = env('UPSTASH_REDIS_REST_URL');
-        $upstashToken = env('UPSTASH_REDIS_REST_TOKEN');
+        // Upstash / Vercel KV Redis REST sync if env configured
+        $upstashUrl = env('UPSTASH_REDIS_REST_URL') ?? env('STORAGE_REST_API_URL') ?? env('KV_REST_API_URL') ?? env('REDIS_REST_URL');
+        $upstashToken = env('UPSTASH_REDIS_REST_TOKEN') ?? env('STORAGE_REST_API_TOKEN') ?? env('KV_REST_API_TOKEN') ?? env('REDIS_REST_TOKEN');
+
         if ($upstashUrl && $upstashToken) {
-            $this->info('[PASO 3] Sincronizando con Upstash Redis REST para Vercel...');
+            $this->info('[PASO 3] Sincronizando clave aislada finance_app_tunnel_url con Vercel KV / Upstash Redis...');
             try {
                 Http::withHeaders(['Authorization' => "Bearer {$upstashToken}"])
-                    ->post(rtrim($upstashUrl, '/').'/set/active_cloudflare_tunnel_url', [$url]);
-                $this->info('  -> Sincronizado con Upstash Redis REST para acceso remoto desde Vercel.');
+                    ->post(rtrim($upstashUrl, '/').'/set/finance_app_tunnel_url', [$url]);
+                $this->info('  -> Sincronizado exitosamente en Vercel KV / Upstash Redis (FGP).');
             } catch (\Throwable $e) {
-                $this->warn('  -> No se pudo sincronizar con Upstash Redis REST.');
+                $this->warn('  -> No se pudo sincronizar con Vercel KV / Upstash Redis.');
             }
         }
 
         $this->info('[PASO 4] Verificando lectura desde Redis...');
-        $verifiedUrl = Cache::store('redis')->get('active_cloudflare_tunnel_url') ?? Cache::get('active_cloudflare_tunnel_url');
+        $verifiedUrl = Cache::store('redis')->get('finance_app_tunnel_url') ?? Cache::get('finance_app_tunnel_url');
 
         $this->newLine();
         $this->info('===========================================================');
