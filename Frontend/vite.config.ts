@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  envPrefix: ['VITE_', 'KV_', 'STORAGE_', 'UPSTASH_', 'REDIS_'],
   server: {
     host: '0.0.0.0',
     allowedHosts: true,

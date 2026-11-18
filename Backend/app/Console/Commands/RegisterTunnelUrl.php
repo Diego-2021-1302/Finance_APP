@@ -18,30 +18,36 @@ class RegisterTunnelUrl extends Command
         $this->info('[PASO 1] Buscando URL del tunel activo de Cloudflare...');
 
         if (!$url) {
-            $logPath = base_path('cloudflared.log');
-            if (!file_exists($logPath)) {
-                $logPath = base_path('../cloudflared.log');
-            }
+            // 1. Try reading cloudflared.log first
+            $possibleLogs = [
+                base_path('cloudflared.log'),
+                base_path('../cloudflared.log'),
+                base_path('storage/logs/cloudflared.log'),
+            ];
 
-            if (file_exists($logPath)) {
-                $this->line('  -> Leyendo archivo de registro cloudflared.log...');
-                $content = file_get_contents($logPath);
-                if (preg_match_all('/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i', $content, $matches)) {
-                    $url = end($matches[0]);
-                    $this->info("  -> URL encontrada en log: {$url}");
+            foreach ($possibleLogs as $logPath) {
+                if (file_exists($logPath)) {
+                    $this->line("  -> Leyendo archivo de registro: {$logPath}...");
+                    $content = file_get_contents($logPath);
+                    if (preg_match_all('/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i', $content, $matches)) {
+                        $url = end($matches[0]);
+                        $this->info("  -> URL activa encontrada en log: {$url}");
+                        break;
+                    }
                 }
             }
         }
 
         if (!$url) {
-            $this->line('  -> Consultando endpoint de metricas http://127.0.0.1:4040/api/tunnels...');
+            // 2. Try auto-detecting from local Cloudflare tunnel metrics endpoint (port 4040)
             try {
+                $this->line('  -> Consultando endpoint de metricas de Cloudflare http://127.0.0.1:4040/api/tunnels...');
                 $response = Http::timeout(2)->get('http://127.0.0.1:4040/api/tunnels');
                 if ($response->successful()) {
                     $tunnels = $response->json('tunnels', []);
                     if (!empty($tunnels[0]['public_url'])) {
                         $url = $tunnels[0]['public_url'];
-                        $this->info("  -> URL autodetectada desde metricas: {$url}");
+                        $this->info("  -> URL autodetectada desde la memoria de Cloudflare: {$url}");
                     }
                 }
             } catch (\Throwable $e) {

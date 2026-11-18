@@ -153,15 +153,25 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
     }
 
     // 2. Query Redis REST endpoint if configured in env (supports Vercel KV / Upstash variables)
-    const redisRestUrl = import.meta.env.VITE_STORAGE_REST_API_URL
-      || import.meta.env.VITE_KV_REST_API_URL
-      || import.meta.env.VITE_UPSTASH_REDIS_REST_URL
-      || import.meta.env.VITE_REDIS_REST_URL;
+    const envObj = import.meta.env as Record<string, string | undefined>;
 
-    const redisRestToken = import.meta.env.VITE_STORAGE_REST_API_TOKEN
-      || import.meta.env.VITE_KV_REST_API_TOKEN
-      || import.meta.env.VITE_UPSTASH_REDIS_REST_TOKEN
-      || import.meta.env.VITE_REDIS_REST_TOKEN;
+    const redisRestUrl = envObj.STORAGE_REST_API_URL
+      || envObj.KV_REST_API_URL
+      || envObj.UPSTASH_REDIS_REST_URL
+      || envObj.REDIS_REST_URL
+      || envObj.VITE_STORAGE_REST_API_URL
+      || envObj.VITE_KV_REST_API_URL
+      || envObj.VITE_UPSTASH_REDIS_REST_URL
+      || envObj.VITE_REDIS_REST_URL;
+
+    const redisRestToken = envObj.STORAGE_REST_API_TOKEN
+      || envObj.KV_REST_API_TOKEN
+      || envObj.UPSTASH_REDIS_REST_TOKEN
+      || envObj.REDIS_REST_TOKEN
+      || envObj.VITE_STORAGE_REST_API_TOKEN
+      || envObj.VITE_KV_REST_API_TOKEN
+      || envObj.VITE_UPSTASH_REDIS_REST_TOKEN
+      || envObj.VITE_REDIS_REST_TOKEN;
 
     if (redisRestUrl && redisRestToken) {
       logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) con clave "finance_app_tunnel_url"...');
