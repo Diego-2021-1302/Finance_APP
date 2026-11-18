@@ -16,7 +16,22 @@ class RegisterTunnelUrl extends Command
         $url = $this->argument('url');
 
         if (!$url) {
-            // Auto-detect from local Cloudflare tunnel metrics endpoint (port 4040)
+            // 1. Try reading cloudflared.log
+            $logPath = base_path('cloudflared.log');
+            if (!file_exists($logPath)) {
+                $logPath = base_path('../cloudflared.log');
+            }
+
+            if (file_exists($logPath)) {
+                $content = file_get_contents($logPath);
+                if (preg_match_all('/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i', $content, $matches)) {
+                    $url = end($matches[0]);
+                }
+            }
+        }
+
+        if (!$url) {
+            // 2. Auto-detect from local Cloudflare tunnel metrics endpoint (port 4040)
             try {
                 $response = Http::timeout(2)->get('http://127.0.0.1:4040/api/tunnels');
                 if ($response->successful()) {
