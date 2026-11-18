@@ -5,12 +5,24 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 1000 * 60 * 5, // 5 minutes fresh cache
+      gcTime: 1000 * 60 * 30, // 30 minutes garbage collection
+      refetchOnWindowFocus: false, // Prevent lag when switching tabs
+      refetchOnReconnect: true,
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter><App /></BrowserRouter>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,
 );

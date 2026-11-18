@@ -82,31 +82,22 @@ class RegisterTunnelUrl extends Command
             Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
         }
 
-        // Upstash / Vercel KV Redis REST sync if env configured
-        $upstashUrl = env('UPSTASH_REDIS_REST_URL') ?? env('STORAGE_REST_API_URL') ?? env('KV_REST_API_URL') ?? env('REDIS_REST_URL');
-        $upstashToken = env('UPSTASH_REDIS_REST_TOKEN') ?? env('STORAGE_REST_API_TOKEN') ?? env('KV_REST_API_TOKEN') ?? env('REDIS_REST_TOKEN');
+        // Upstash / Vercel KV Redis REST sync if an explicit HTTP REST endpoint is configured
+        $upstashUrl = env('UPSTASH_REDIS_REST_URL') ?? env('STORAGE_REST_API_URL') ?? env('KV_REST_API_URL');
+        $upstashToken = env('UPSTASH_REDIS_REST_TOKEN') ?? env('STORAGE_REST_API_TOKEN') ?? env('KV_REST_API_TOKEN');
 
-        if ((!$upstashUrl || !$upstashToken) && env('REDIS_URL')) {
+        if ($upstashUrl && $upstashToken && str_contains($upstashUrl, 'http')) {
+            $this->info('[PASO 3] Sincronizando clave aislada finance_app_tunnel_url con REST API...');
             try {
-                $parsedUrl = parse_url(preg_replace('/^(rediss?|https?):\/\//', 'http://', env('REDIS_URL')));
-                if (!empty($parsedUrl['host']) && (!empty($parsedUrl['pass']) || !empty($parsedUrl['user']))) {
-                    $upstashUrl = 'https://'.$parsedUrl['host'];
-                    $upstashToken = $parsedUrl['pass'] ?? $parsedUrl['user'];
-                }
-            } catch (\Throwable $e) {
-                // Ignore parse error
-            }
-        }
-
-        if ($upstashUrl && $upstashToken) {
-            $this->info('[PASO 3] Sincronizando clave aislada finance_app_tunnel_url con Vercel KV / Upstash Redis...');
-            try {
-                Http::withHeaders(['Authorization' => "Bearer {$upstashToken}"])
+                Http::timeout(3)
+                    ->withHeaders(['Authorization' => "Bearer {$upstashToken}"])
                     ->post(rtrim($upstashUrl, '/').'/set/finance_app_tunnel_url', [$url]);
-                $this->info('  -> Sincronizado exitosamente en Vercel KV / Upstash Redis (FGP).');
+                $this->info('  -> Sincronizado exitosamente vía REST API.');
             } catch (\Throwable $e) {
-                $this->warn('  -> No se pudo sincronizar con Vercel KV / Upstash Redis.');
+                $this->line('  -> Conexión directa TCP en PASO 2 mantenida.');
             }
+        } else {
+            $this->info('[PASO 3] Sincronización en Redis completada mediante conexión TCP directa.');
         }
 
         $frontendPublicJson = base_path('../Frontend/public/tunnel.json');

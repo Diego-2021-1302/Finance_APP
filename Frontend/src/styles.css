@@ -72,6 +72,16 @@ button, input, select, textarea { font: inherit; }
 a { color: inherit; text-decoration: none; }
 .fluent-root { min-height: 100vh; }
 
+/* Performance & GPU Hardware Acceleration */
+.content-card, .metric-card, .table-card, .auth-card {
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+.sidebar [role="tab"], .topbar, .brand-mark, .metric-icon {
+  will-change: transform;
+}
+
 .app-frame {
   min-height: 100vh;
   background: var(--surface-gradient);

@@ -5,6 +5,21 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   envPrefix: ['VITE_', 'KV_', 'STORAGE_', 'UPSTASH_', 'REDIS_'],
+  build: {
+    target: 'esnext',
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-fluent': ['@fluentui/react-components', '@fluentui/react-icons'],
+          'vendor-recharts': ['recharts'],
+          'vendor-query': ['@tanstack/react-query'],
+          'vendor-router': ['react-router-dom'],
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
