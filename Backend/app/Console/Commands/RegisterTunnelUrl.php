@@ -86,6 +86,18 @@ class RegisterTunnelUrl extends Command
         $upstashUrl = env('UPSTASH_REDIS_REST_URL') ?? env('STORAGE_REST_API_URL') ?? env('KV_REST_API_URL') ?? env('REDIS_REST_URL');
         $upstashToken = env('UPSTASH_REDIS_REST_TOKEN') ?? env('STORAGE_REST_API_TOKEN') ?? env('KV_REST_API_TOKEN') ?? env('REDIS_REST_TOKEN');
 
+        if ((!$upstashUrl || !$upstashToken) && env('REDIS_URL')) {
+            try {
+                $parsedUrl = parse_url(preg_replace('/^(rediss?|https?):\/\//', 'http://', env('REDIS_URL')));
+                if (!empty($parsedUrl['host']) && (!empty($parsedUrl['pass']) || !empty($parsedUrl['user']))) {
+                    $upstashUrl = 'https://'.$parsedUrl['host'];
+                    $upstashToken = $parsedUrl['pass'] ?? $parsedUrl['user'];
+                }
+            } catch (\Throwable $e) {
+                // Ignore parse error
+            }
+        }
+
         if ($upstashUrl && $upstashToken) {
             $this->info('[PASO 3] Sincronizando clave aislada finance_app_tunnel_url con Vercel KV / Upstash Redis...');
             try {
@@ -95,6 +107,15 @@ class RegisterTunnelUrl extends Command
             } catch (\Throwable $e) {
                 $this->warn('  -> No se pudo sincronizar con Vercel KV / Upstash Redis.');
             }
+        }
+
+        $frontendPublicJson = base_path('../Frontend/public/tunnel.json');
+        if (file_exists(dirname($frontendPublicJson))) {
+            @file_put_contents($frontendPublicJson, json_encode([
+                'tunnel_url' => $url,
+                'api_base_url' => $url.'/api/v1',
+                'updated_at' => $updatedAt,
+            ], JSON_PRETTY_PRINT));
         }
 
         $this->info('[PASO 4] Verificando lectura desde Redis...');

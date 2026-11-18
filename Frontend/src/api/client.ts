@@ -138,6 +138,26 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
   return false;
 }
 
+function parseRedisUrl(redisUrl: string | undefined): { url: string; token: string } | null {
+  if (!redisUrl) return null;
+  try {
+    const cleaned = redisUrl.replace(/^(rediss?|https?):\/\//, 'https://');
+    const urlObj = new URL(cleaned);
+    const host = urlObj.hostname;
+    const token = urlObj.password || urlObj.username;
+
+    if (host && token) {
+      return {
+        url: `https://${host}`,
+        token,
+      };
+    }
+  } catch {
+    // Ignore parse error
+  }
+  return null;
+}
+
 async function fetchActiveTunnelFromGateway(): Promise<string | null> {
   if (tunnelResolutionPromise) return tunnelResolutionPromise;
 
@@ -167,7 +187,7 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
     // 2. Query Redis REST endpoint if configured in env (supports Vercel KV / Upstash variables)
     const envObj = import.meta.env as Record<string, string | undefined>;
 
-    const redisRestUrl = envObj.STORAGE_REST_API_URL
+    let redisRestUrl = envObj.STORAGE_REST_API_URL
       || envObj.KV_REST_API_URL
       || envObj.UPSTASH_REDIS_REST_URL
       || envObj.REDIS_REST_URL
@@ -176,7 +196,7 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       || envObj.VITE_UPSTASH_REDIS_REST_URL
       || envObj.VITE_REDIS_REST_URL;
 
-    const redisRestToken = envObj.STORAGE_REST_API_TOKEN
+    let redisRestToken = envObj.STORAGE_REST_API_TOKEN
       || envObj.KV_REST_API_TOKEN
       || envObj.UPSTASH_REDIS_REST_TOKEN
       || envObj.REDIS_REST_TOKEN
@@ -184,6 +204,16 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       || envObj.VITE_KV_REST_API_TOKEN
       || envObj.VITE_UPSTASH_REDIS_REST_TOKEN
       || envObj.VITE_REDIS_REST_TOKEN;
+
+    const rawRedisUrl = envObj.REDIS_URL || envObj.KV_URL || envObj.STORAGE_URL || envObj.VITE_REDIS_URL;
+    if ((!redisRestUrl || !redisRestToken) && rawRedisUrl) {
+      const parsed = parseRedisUrl(rawRedisUrl);
+      if (parsed) {
+        redisRestUrl = parsed.url;
+        redisRestToken = parsed.token;
+        logApiInfo('💡', 'Extraída la URL REST y Token directamente desde la variable REDIS_URL:', redisRestUrl);
+      }
+    }
 
     if (redisRestUrl && redisRestToken) {
       logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) para obtener la URL activa...');
