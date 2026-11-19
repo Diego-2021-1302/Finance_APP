@@ -161,6 +161,10 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
       clearTimeout(timeoutId);
 
       if (response && response.ok) {
+        if (!response.headers.get('content-type')?.includes('application/json')) {
+          logApiWarn('⚠️', '/api/tunnel devolvió HTML en lugar de JSON; Vercel está usando el fallback de la SPA.');
+          return null;
+        }
         const data = await response.json().catch(() => null);
         const candidate = extractCleanUrl(data?.tunnel_url);
         if (candidate) {
@@ -279,6 +283,9 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
 
   try {
     const response = await fetch(targetUrl, { ...init, headers });
+    if (response.ok && !response.headers.get('content-type')?.includes('application/json')) {
+      throw new ApiRequestError('Vercel devolvió la página web en lugar de la respuesta JSON de la API.', 502);
+    }
     const payload: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {

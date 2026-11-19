@@ -85,6 +85,20 @@ describe('live API client', () => {
     expect(storedValues.get('finance-app.active-tunnel-url')).toBe('https://new-tunnel.trycloudflare.com');
   });
 
+  it('rejects a successful HTML response instead of treating the SPA as API data', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>()
+      .mockResolvedValue(new Response('<!doctype html><title>Finance App</title>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      })));
+
+    const { liveClient } = await import('../api/client');
+    await expect(liveClient.getDashboardSummary()).rejects.toMatchObject({
+      status: 502,
+      message: 'Vercel devolvió la página web en lugar de la respuesta JSON de la API.',
+    });
+  });
+
   it('restores a saved session after a reload and clears it on explicit logout', async () => {
     const fetchStub = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
