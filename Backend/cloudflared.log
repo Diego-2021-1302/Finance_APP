@@ -44,3 +44,7 @@
 {"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T14:31:54Z"}
 {"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T14:31:54Z","message":"Request failed"}
 {"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T15:56:02Z","message":"Failed to refresh DNS local resolver"}
+{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T16:47:21Z"}
+{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T16:47:21Z","message":"Request failed"}
+{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T16:47:22Z"}
+{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T16:47:22Z","message":"Request failed"}

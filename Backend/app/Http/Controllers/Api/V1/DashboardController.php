@@ -24,15 +24,15 @@ class DashboardController extends Controller
         $cacheKey = sprintf('user_dashboard_summary_%d', $user->id);
 
         $data = Cache::remember($cacheKey, 10, function () use ($user, $money) {
-            $confirmed = (string) FinancialTransaction::query()
+            $confirmed = (string) (FinancialTransaction::query()
                 ->where('user_id', $user->id)
                 ->whereHas('account', fn ($query) => $query->where('type', '!=', 'credit_card'))
-                ->sum('amount');
-            $totalDebt = (string) \App\Models\Debt::query()->where('user_id', $user->id)->sum('outstanding_amount');
+                ->sum('amount') ?: '0.00');
+            $totalDebt = (string) (\App\Models\Debt::query()->where('user_id', $user->id)->sum('outstanding_amount') ?: '0.00');
             $startOfMonth = now()->startOfMonth();
             $endOfMonth = now()->endOfMonth();
 
-            $reservedAmount = (string) Reserve::query()->where('user_id', $user->id)->sum('current_amount');
+            $reservedAmount = (string) (Reserve::query()->where('user_id', $user->id)->sum('current_amount') ?: '0.00');
             $availableUncommitted = bcsub($confirmed, $reservedAmount, 2);
 
             $currentYearMonth = now()->format('Y-m');
@@ -41,11 +41,11 @@ class DashboardController extends Controller
                 ->where('year_month', $currentYearMonth)
                 ->get()
                 ->map(function ($budget) use ($user, $startOfMonth, $endOfMonth, $money) {
-                    $spent = (string) Expense::query()
+                    $spent = (string) (Expense::query()
                         ->where('user_id', $user->id)
                         ->where('category', $budget->category)
                         ->whereBetween('occurred_at', [$startOfMonth, $endOfMonth])
-                        ->sum('amount');
+                        ->sum('amount') ?: '0.00');
                     $remaining = bcsub((string) $budget->monthly_limit, $spent, 2);
                     $percentage = bccomp((string) $budget->monthly_limit, '0.00', 2) > 0
                         ? bcmul(bcdiv($spent, (string) $budget->monthly_limit, 4), '100', 1)
@@ -60,18 +60,18 @@ class DashboardController extends Controller
                     ];
                 });
 
-            $expected = (string) Income::query()
+            $expected = (string) (Income::query()
                 ->where('user_id', $user->id)
                 ->whereDate('expected_date', '>=', $startOfMonth)
                 ->whereDate('expected_date', '<=', $endOfMonth)
-                ->sum('amount');
+                ->sum('amount') ?: '0.00');
 
-            $received = (string) Payment::query()
+            $received = (string) (Payment::query()
                 ->where('user_id', $user->id)
                 ->whereNotNull('income_id')
                 ->whereNull('reversed_at')
                 ->whereBetween('paid_at', [$startOfMonth, $endOfMonth])
-                ->sum('amount');
+                ->sum('amount') ?: '0.00');
 
             $occurrences = CommitmentOccurrence::query()
                 ->where('user_id', $user->id)
