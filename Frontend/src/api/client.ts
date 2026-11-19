@@ -61,38 +61,17 @@ export class ApiRequestError extends Error {
   }
 }
 
-function logApiInfo(emoji: string, message: string, detail?: unknown) {
-  console.info(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #2563eb; font-weight: bold;', detail ?? '');
-}
-
-function logApiSuccess(emoji: string, message: string, detail?: unknown) {
-  console.log(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #0d9488; font-weight: bold;', detail ?? '');
-}
-
-function logApiWarn(emoji: string, message: string, detail?: unknown) {
-  console.warn(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #d97706; font-weight: bold;', detail ?? '');
-}
-
-function logApiError(emoji: string, message: string, detail?: unknown) {
-  console.error(`%c${emoji} [Finanzas Clara API] ${message}`, 'color: #dc2626; font-weight: bold;', detail ?? '');
-}
-
 function getApiBaseUrl(): string {
   const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey);
   if (cachedUrl) {
-    const clean = `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
-    logApiInfo('📍', 'Usando URL del Backend guardada en caché (localStorage):', clean);
-    return clean;
+    return `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
   }
 
   const envUrl = import.meta.env.VITE_API_BASE_URL;
   if (envUrl) {
-    const clean = envUrl.replace(/\/+$/, '');
-    logApiInfo('⚙️', 'Usando URL del Backend desde variable de entorno VITE_API_BASE_URL:', clean);
-    return clean;
+    return envUrl.replace(/\/+$/, '');
   }
 
-  logApiWarn('⚠️', 'No hay URL del Backend en caché ni en variable de entorno. Usando fallback por defecto: /api/v1');
   return '/api/v1';
 }
 
@@ -112,7 +91,6 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
 
     const cleanUrl = cleanCandidate.replace(/\/+$/, '');
     const baseUrl = cleanUrl.endsWith('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
-    logApiInfo('⚡', 'Verificando estado de salud del túnel candidato en:', `${baseUrl}/health`);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -129,14 +107,12 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
       if (data?.status === 'healthy') {
         const tunnelBase = cleanUrl.replace(/\/api\/v1$/, '');
         globalThis.localStorage.setItem(tunnelUrlStorageKey, tunnelBase);
-        logApiSuccess('✅', '¡Salud del túnel VERIFICADA con éxito!', tunnelBase);
         return true;
       }
     }
   } catch {
-    // Health check failed
+    return false;
   }
-  logApiError('❌', 'Verificación de salud fallida para el túnel:', candidateUrl);
   return false;
 }
 
@@ -148,7 +124,6 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
   if (tunnelResolutionPromise) return tunnelResolutionPromise;
 
   tunnelResolutionPromise = (async () => {
-    logApiInfo('🔍', 'Consultando la función de Vercel (/api/tunnel) para actualizar la URL desde Redis...');
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -162,7 +137,6 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
 
       if (response && response.ok) {
         if (!response.headers.get('content-type')?.includes('application/json')) {
-          logApiWarn('⚠️', '/api/tunnel devolvió HTML en lugar de JSON; Vercel está usando el fallback de la SPA.');
           return null;
         }
         const data = await response.json().catch(() => null);
@@ -170,17 +144,12 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
         if (candidate) {
           const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey)?.replace(/\/+$/, '');
           if (cachedUrl === candidate.replace(/\/+$/, '') || await verifyTunnelHealth(candidate)) {
-            const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
-            logApiSuccess('🎉', 'URL activa de Cloudflare sincronizada desde Vercel y Redis:', clean);
-            return clean;
+            return `${candidate.replace(/\/+$/, '')}/api/v1`;
           }
         }
-        logApiWarn('⚠️', 'La función /api/tunnel no devolvió una URL de túnel válida.');
-      } else if (response) {
-        logApiWarn('⚠️', `La función /api/tunnel respondió HTTP ${response.status}.`);
       }
-    } catch (e) {
-      logApiWarn('⚠️', 'Error al consultar /api/tunnel:', e);
+    } catch {
+      // Continue to the configured backend URL fallback.
     }
 
     const envUrl = import.meta.env.VITE_API_BASE_URL;
@@ -210,9 +179,7 @@ function refreshActiveTunnel(force = false): Promise<string | null> {
 
 if (isVercelDeployment()) {
   const refresh = () => {
-    void refreshActiveTunnel(true).catch((error: unknown) => {
-      logApiWarn('⚠️', 'No se pudo sincronizar la URL del túnel en segundo plano:', error);
-    });
+    void refreshActiveTunnel(true);
   };
   refresh();
   globalThis.setInterval(refresh, tunnelPollIntervalMs);
@@ -279,7 +246,6 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
   const targetUrl = `${currentApiBase}${path}`;
-  logApiInfo('🚀', `Enviando solicitud ${init.method ?? 'GET'} a:`, targetUrl);
 
   try {
     const response = await fetch(targetUrl, { ...init, headers });
@@ -289,14 +255,10 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
     const payload: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {
-      logApiWarn('⚠️', `Respuesta HTTP ${response.status} desde:`, targetUrl);
-
       if ((response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503 || response.status === 504 || response.status === 530) && !isRetry) {
-        logApiWarn('🔄', `Solicitud falló con HTTP ${response.status}. Purgando URL caducada de localStorage y buscando túnel activo en Redis...`);
         globalThis.localStorage.removeItem(tunnelUrlStorageKey);
         const newApiBase = await fetchActiveTunnelFromGateway();
         if (newApiBase) {
-          logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud automáticamente:', `${newApiBase}${path}`);
           return request<T>(path, init, true);
         }
       }
@@ -309,16 +271,12 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
       throw new ApiRequestError(message, response.status);
     }
 
-    logApiSuccess('✨', `Respuesta exitosa (200 OK) desde:`, targetUrl);
     return payload as T;
   } catch (error) {
     if (!isRetry && (error instanceof TypeError || (error instanceof ApiRequestError && error.status >= 500))) {
-      logApiError('💥', 'Error de red o conexión rechazada con:', targetUrl);
-      logApiWarn('🔄', 'Purgando URL de túnel caducada y buscando túnel activo en Redis...');
       globalThis.localStorage.removeItem(tunnelUrlStorageKey);
       const newApiBase = await fetchActiveTunnelFromGateway();
       if (newApiBase) {
-        logApiSuccess('✅', '¡Nueva URL configurada! Reintentando solicitud:', `${newApiBase}${path}`);
         return request<T>(path, init, true);
       }
     }
