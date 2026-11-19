@@ -182,14 +182,13 @@ input::placeholder {
 .sidebar.collapsed {
   width: 76px;
   flex: 0 0 76px;
-  padding: 28px 8px 20px;
+  padding: 28px 10px 20px;
   align-items: center;
 }
 
 .sidebar.collapsed .nav-caption,
 .sidebar.collapsed .sidebar-note,
-.sidebar.collapsed .sidebar-footer,
-.sidebar.collapsed [role="tab"] span {
+.sidebar.collapsed .sidebar-footer {
   display: none !important;
 }
 
@@ -198,22 +197,28 @@ input::placeholder {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  gap: 6px;
+  gap: 8px;
 }
 
 .sidebar.collapsed [role="tab"] {
+  display: flex !important;
+  align-items: center !important;
   justify-content: center !important;
-  width: 48px !important;
-  height: 48px !important;
+  width: 52px !important;
+  height: 52px !important;
   padding: 0 !important;
   min-height: unset !important;
-  border-radius: 12px !important;
-  margin: 0 auto;
+  border-radius: var(--radius-md) !important;
+  margin: 0 auto !important;
 }
 
-.sidebar.collapsed [role="tab"] svg {
-  font-size: 20px !important;
+.sidebar.collapsed [role="tab"] [class*="fui-Tab__icon"] {
   margin: 0 !important;
+  font-size: 22px !important;
+}
+
+.sidebar.collapsed [role="tab"] [class*="fui-Tab__content"] {
+  display: none !important;
 }
 
 .page-main {

@@ -40,7 +40,6 @@ export function SettingsPage() {
         <Field label="Time zone"><select value={draft.timezone} onChange={(event) => update('timezone', event.target.value)}><option value="America/Santo_Domingo">America/Santo_Domingo</option><option value="America/New_York">America/New_York</option></select></Field>
         <Field label="Week starts"><select value={draft.weekStarts} onChange={(event) => update('weekStarts', event.target.value)}><option value="Monday">Monday</option><option value="Sunday">Sunday</option></select></Field>
         <Field label="Reminder days before due date"><Input type="number" min={1} max={14} value={String(draft.reminders)} onChange={(event) => update('reminders', Number(event.target.value))} /></Field>
-        <Field label="Appearance"><select value={draft.appearance} onChange={(event) => update('appearance', event.target.value as Preferences['appearance'])}><option value="system">Match device</option><option value="light">Light</option><option value="dark">Dark</option></select></Field>
         <Button appearance="primary" disabled={save.isPending} onClick={() => save.mutate(draft)}>{save.isPending ? 'Saving…' : 'Save preferences'}</Button>
         {saved && <Caption1>Preferences saved.</Caption1>}
       </Card>

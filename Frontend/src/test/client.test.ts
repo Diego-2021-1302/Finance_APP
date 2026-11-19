@@ -4,6 +4,8 @@ describe('live API client', () => {
   let storedValues: Map<string, string>;
 
   beforeEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     vi.resetModules();
     vi.unstubAllGlobals();
     storedValues = new Map();
@@ -52,6 +54,35 @@ describe('live API client', () => {
     const secondCall = fetchStub.mock.calls[1];
     expect(secondCall[0]).toBe('/api/v1/incomes');
     expect(new Headers(secondCall[1]?.headers).get('Authorization')).toBe('Bearer ephemeral-token');
+  });
+
+  it('updates a cached tunnel URL from Redis before sending a request on Vercel', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('location', { hostname: 'finance-app.vercel.app' });
+    storedValues.set('finance-app.active-tunnel-url', 'https://old-tunnel.trycloudflare.com');
+
+    const fetchStub = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        tunnel_url: 'https://new-tunnel.trycloudflare.com',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'healthy' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { user: { id: 11, name: 'Casey Example', email: 'casey@example.com' }, token: 'new-token' },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchStub);
+
+    const { liveClient } = await import('../api/client');
+    await liveClient.login({ email: 'casey@example.com', password: 'a-private-password' });
+
+    expect(fetchStub.mock.calls.map(([url]) => url)).toEqual([
+      expect.stringMatching(/^\/api\/tunnel\?/),
+      'https://new-tunnel.trycloudflare.com/api/v1/health',
+      'https://new-tunnel.trycloudflare.com/api/v1/auth/login',
+    ]);
+    expect(storedValues.get('finance-app.active-tunnel-url')).toBe('https://new-tunnel.trycloudflare.com');
   });
 
   it('restores a saved session after a reload and clears it on explicit logout', async () => {

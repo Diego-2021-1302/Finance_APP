@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Button, FluentProvider, createDarkTheme, createLightTheme, type BrandVariants } from '@fluentui/react-components';
+import { useMemo } from 'react';
+import { Button, FluentProvider, createDarkTheme, type BrandVariants } from '@fluentui/react-components';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
@@ -18,20 +18,12 @@ const brandRamp: BrandVariants = {
 };
 
 export default function App() {
-  const lightTheme = useMemo(() => createLightTheme(brandRamp), []);
   const darkTheme = useMemo(() => createDarkTheme(brandRamp), []);
-  const [isDark, setIsDark] = useState(() => {
-    const saved = globalThis.localStorage.getItem('finance-app.appearance');
-    return saved === 'dark' || (saved === 'system' && globalThis.matchMedia('(prefers-color-scheme: dark)').matches);
-  });
   const themeValue = useMemo(() => ({
-    isDark,
-    setAppearance: (appearance: 'light' | 'dark' | 'system') => {
-      globalThis.localStorage.setItem('finance-app.appearance', appearance);
-      setIsDark(appearance === 'dark' || (appearance === 'system' && globalThis.matchMedia('(prefers-color-scheme: dark)').matches));
-    },
-  }), [isDark]);
-  return <FluentProvider theme={isDark ? darkTheme : lightTheme} className="fluent-root">
+    isDark: true,
+    setAppearance: () => {},
+  }), []);
+  return <FluentProvider theme={darkTheme} className="fluent-root">
     <ThemeContext.Provider value={themeValue}><AuthProvider><AuthRoutes /></AuthProvider></ThemeContext.Provider>
   </FluentProvider>;
 }

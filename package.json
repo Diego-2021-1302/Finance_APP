@@ -1,0 +1,7 @@
+{
+  "name": "finance-app-vercel-functions",
+  "private": true,
+  "dependencies": {
+    "redis": "^6.3.1"
+  }
+}

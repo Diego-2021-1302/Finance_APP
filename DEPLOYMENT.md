@@ -91,6 +91,11 @@ GEMINI_MODEL=gemini-3.8-flash
    ```
 2. Los archivos compilados en `dist/` se sirven a través del servidor web Nginx o Apache.
 
+### Vercel y sincronización del túnel
+- La configuración raíz construye `api/tunnel.js` como función de Vercel y la aplicación de `Frontend/` como sitio estático.
+- Conectar la base Redis al proyecto Vercel para que `REDIS_URL` esté disponible en Production. La función usa el cliente Redis por TCP/TLS; no requiere variables REST ni variables con prefijo `VITE_`.
+- La función consulta Redis sin caché; el frontend verifica cambios cada 5 segundos mientras está abierto y vuelve a sincronizar al recuperar el foco de la pestaña. La URL nueva se activa después de superar la verificación de salud del backend.
+
 ---
 
 ## 4. SUPERVISIÓN DE TRABAJOS EN SEGUNDO PLANO (SUPERVISOR)

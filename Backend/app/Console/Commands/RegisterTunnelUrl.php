@@ -81,7 +81,7 @@ class RegisterTunnelUrl extends Command
         } catch (\Throwable $e) {
             $this->warn('  -> Redis local no respondio. Guardando en cache de respaldo...');
             Cache::put('finance_app_tunnel_url', $url, now()->addDays(30));
-        }   Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
+            Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
         }
 
         // Upstash / Vercel KV Redis REST sync if an explicit HTTP REST endpoint is configured
@@ -91,9 +91,15 @@ class RegisterTunnelUrl extends Command
         if ($upstashUrl && $upstashToken && str_contains($upstashUrl, 'http')) {
             $this->info('[PASO 3] Sincronizando clave aislada finance_app_tunnel_url con REST API...');
             try {
-                Http::timeout(3)
+                $response = Http::timeout(3)
                     ->withHeaders(['Authorization' => "Bearer {$upstashToken}"])
                     ->post(rtrim($upstashUrl, '/').'/set/finance_app_tunnel_url', [$url]);
+                $response->throw();
+
+                $response = Http::timeout(3)
+                    ->withHeaders(['Authorization' => "Bearer {$upstashToken}"])
+                    ->post(rtrim($upstashUrl, '/').'/set/finance_app_tunnel_updated_at', [$updatedAt]);
+                $response->throw();
                 $this->info('  -> Sincronizado exitosamente vía REST API.');
             } catch (\Throwable $e) {
                 $this->line('  -> Conexión directa TCP en PASO 2 mantenida.');

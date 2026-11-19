@@ -48,9 +48,11 @@ type RawSettings = {
 const tunnelUrlStorageKey = 'finance-app.active-tunnel-url';
 const accessTokenStorageKey = 'finance-app.access-token';
 const deviceIdStorageKey = 'finance-app.device-id';
+const tunnelPollIntervalMs = 5000;
 let accessToken: string | null = globalThis.localStorage.getItem(accessTokenStorageKey);
 let currentUserRequest: Promise<User> | null = null;
 let tunnelResolutionPromise: Promise<string | null> | null = null;
+let lastTunnelResolutionAt = 0;
 
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status: number) {
@@ -138,37 +140,20 @@ async function verifyTunnelHealth(candidateUrl: string): Promise<boolean> {
   return false;
 }
 
-function parseRedisUrl(redisUrl: string | undefined): { url: string; token: string } | null {
-  if (!redisUrl) return null;
-  try {
-    const cleaned = redisUrl.replace(/^(rediss?|https?):\/\//, 'https://');
-    const urlObj = new URL(cleaned);
-    const host = urlObj.hostname;
-    const token = urlObj.password || urlObj.username;
-
-    if (host && token) {
-      return {
-        url: `https://${host}`,
-        token,
-      };
-    }
-  } catch {
-    // Ignore parse error
-  }
-  return null;
+function isVercelDeployment(): boolean {
+  return Boolean(globalThis.location?.hostname?.endsWith('.vercel.app'));
 }
 
 async function fetchActiveTunnelFromGateway(): Promise<string | null> {
   if (tunnelResolutionPromise) return tunnelResolutionPromise;
 
   tunnelResolutionPromise = (async () => {
-    // 1. Query Vercel Serverless Function /api/tunnel
-    logApiInfo('🔍', 'Consultando función Serverless de Vercel (/api/tunnel) para leer Redis directamente...');
+    logApiInfo('🔍', 'Consultando la función de Vercel (/api/tunnel) para actualizar la URL desde Redis...');
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const response = await fetch('/api/tunnel', {
+      const response = await fetch(`/api/tunnel?t=${Date.now()}`, {
         headers: { Accept: 'application/json' },
         signal: controller.signal,
       }).catch(() => null);
@@ -177,87 +162,23 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
 
       if (response && response.ok) {
         const data = await response.json().catch(() => null);
-        if (data?.tunnel_url && (await verifyTunnelHealth(data.tunnel_url))) {
-          const clean = `${data.tunnel_url.replace(/\/+$/, '')}/api/v1`;
-          logApiSuccess('🎉', '¡URL activa de Cloudflare obtenida desde Vercel Serverless (/api/tunnel)!', clean);
-          return clean;
+        const candidate = extractCleanUrl(data?.tunnel_url);
+        if (candidate) {
+          const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey)?.replace(/\/+$/, '');
+          if (cachedUrl === candidate.replace(/\/+$/, '') || await verifyTunnelHealth(candidate)) {
+            const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
+            logApiSuccess('🎉', 'URL activa de Cloudflare sincronizada desde Vercel y Redis:', clean);
+            return clean;
+          }
         }
+        logApiWarn('⚠️', 'La función /api/tunnel no devolvió una URL de túnel válida.');
+      } else if (response) {
+        logApiWarn('⚠️', `La función /api/tunnel respondió HTTP ${response.status}.`);
       }
     } catch (e) {
       logApiWarn('⚠️', 'Error al consultar /api/tunnel:', e);
     }
 
-    // 2. Query Redis REST endpoint if configured in env (supports Vercel KV / Upstash variables)
-    const envObj = import.meta.env as Record<string, string | undefined>;
-
-    let redisRestUrl = envObj.STORAGE_REST_API_URL
-      || envObj.KV_REST_API_URL
-      || envObj.UPSTASH_REDIS_REST_URL
-      || envObj.REDIS_REST_URL
-      || envObj.VITE_STORAGE_REST_API_URL
-      || envObj.VITE_KV_REST_API_URL
-      || envObj.VITE_UPSTASH_REDIS_REST_URL
-      || envObj.VITE_REDIS_REST_URL;
-
-    let redisRestToken = envObj.STORAGE_REST_API_TOKEN
-      || envObj.KV_REST_API_TOKEN
-      || envObj.UPSTASH_REDIS_REST_TOKEN
-      || envObj.REDIS_REST_TOKEN
-      || envObj.VITE_STORAGE_REST_API_TOKEN
-      || envObj.VITE_KV_REST_API_TOKEN
-      || envObj.VITE_UPSTASH_REDIS_REST_TOKEN
-      || envObj.VITE_REDIS_REST_TOKEN;
-
-    const rawRedisUrl = envObj.REDIS_URL || envObj.KV_URL || envObj.STORAGE_URL || envObj.VITE_REDIS_URL;
-    if ((!redisRestUrl || !redisRestToken) && rawRedisUrl) {
-      const parsed = parseRedisUrl(rawRedisUrl);
-      if (parsed) {
-        redisRestUrl = parsed.url;
-        redisRestToken = parsed.token;
-        logApiInfo('💡', 'Extraída la URL REST y Token desde la variable REDIS_URL:', redisRestUrl);
-      }
-    }
-
-    if (redisRestUrl && redisRestToken) {
-      logApiInfo('📡', 'Consultando Vercel KV / Upstash Redis (FGP) para obtener la URL activa...');
-      const candidateKeys = [
-        'finance_app_tunnel_url',
-        'laravel_database_finance_app_tunnel_url',
-        'laravel_database_laravel_cache_finance_app_tunnel_url',
-      ];
-
-      for (const keyName of candidateKeys) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-          const response = await fetch(`${redisRestUrl}/get/${keyName}`, {
-            headers: { Authorization: `Bearer ${redisRestToken}` },
-            signal: controller.signal,
-          }).catch(() => null);
-
-          clearTimeout(timeoutId);
-
-          if (response && response.ok) {
-            const data = await response.json().catch(() => null);
-            const rawVal = data?.result;
-            const candidate = extractCleanUrl(rawVal);
-            if (candidate) {
-              logApiInfo('🔎', `URL aislada de Finanzas Clara encontrada en Redis (clave: ${keyName}):`, candidate);
-              if (await verifyTunnelHealth(candidate)) {
-                const clean = `${candidate.replace(/\/+$/, '')}/api/v1`;
-                logApiSuccess('🎉', '¡URL verificada y activa desde Vercel KV / Upstash Redis (FGP)!', clean);
-                return clean;
-              }
-            }
-          }
-        } catch (e) {
-          logApiWarn('⚠️', `Error al consultar Vercel KV / Upstash Redis key "${keyName}":`, e);
-        }
-      }
-    }
-
-    // 3. Fallback to VITE_API_BASE_URL env
     const envUrl = import.meta.env.VITE_API_BASE_URL;
     if (envUrl && (await verifyTunnelHealth(envUrl))) {
       return envUrl.replace(/\/+$/, '');
@@ -271,6 +192,30 @@ async function fetchActiveTunnelFromGateway(): Promise<string | null> {
   } finally {
     tunnelResolutionPromise = null;
   }
+}
+
+function refreshActiveTunnel(force = false): Promise<string | null> {
+  if (!isVercelDeployment()) return Promise.resolve(null);
+  if (tunnelResolutionPromise) return tunnelResolutionPromise;
+  if (!force && Date.now() - lastTunnelResolutionAt < tunnelPollIntervalMs) {
+    return Promise.resolve(null);
+  }
+  lastTunnelResolutionAt = Date.now();
+  return fetchActiveTunnelFromGateway();
+}
+
+if (isVercelDeployment()) {
+  const refresh = () => {
+    void refreshActiveTunnel(true).catch((error: unknown) => {
+      logApiWarn('⚠️', 'No se pudo sincronizar la URL del túnel en segundo plano:', error);
+    });
+  };
+  refresh();
+  globalThis.setInterval(refresh, tunnelPollIntervalMs);
+  globalThis.addEventListener?.('focus', refresh);
+  globalThis.document?.addEventListener('visibilitychange', () => {
+    if (globalThis.document.visibilityState === 'visible') refresh();
+  });
 }
 
 function getDeviceId(): string {
@@ -321,19 +266,8 @@ function toUser(user: BackendUser): User {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
-  let currentApiBase = getApiBaseUrl();
-
-  // If executing on Vercel and current API base is relative (/api/v1), auto-discover active tunnel before request!
-  if (currentApiBase.startsWith('/api/v1') && globalThis.location?.hostname?.includes('vercel.app')) {
-    logApiWarn('🔍', 'Ejecutando en Vercel con URL relativa. Buscando túnel Cloudflare activo en Vercel KV / Upstash Redis...');
-    const discovered = await fetchActiveTunnelFromGateway();
-    if (discovered) {
-      currentApiBase = discovered;
-      logApiSuccess('⚡', '¡Túnel activo configurado para Vercel!', currentApiBase);
-    } else {
-      logApiError('❌', 'No se pudo descubrir una URL de túnel activa en Vercel.');
-    }
-  }
+  if (isVercelDeployment()) await refreshActiveTunnel();
+  const currentApiBase = getApiBaseUrl();
 
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
