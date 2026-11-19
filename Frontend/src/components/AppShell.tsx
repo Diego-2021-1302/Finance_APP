@@ -5,11 +5,13 @@ import {
 import {
   HomeRegular, MoneyRegular, CalendarRegular, ArrowSwapRegular,
   DataBarVerticalRegular, SettingsRegular, SearchRegular, AlertRegular,
-  WalletRegular, NavigationRegular, DismissRegular, ChatRegular,
+  WalletRegular, NavigationRegular, ChatRegular,
 } from '@fluentui/react-icons';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useAppTheme } from '../theme/ThemeContext';
+import { PWAInstallPrompt } from './PWAInstallPrompt';
+import { MobileBottomNav } from './MobileBottomNav';
 
 const navItems = [
   { to: '/', label: 'Tablero', icon: <HomeRegular /> },
@@ -34,13 +36,12 @@ export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
     if (mobileMenuOpen) {
       document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
     }
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
     };
   }, [mobileMenuOpen]);
 
@@ -52,14 +53,9 @@ export function AppShell() {
   };
 
   return <div className={isDark ? 'app-frame dark' : 'app-frame'}>
+    <PWAInstallPrompt />
     <header className="topbar">
       <div className="brand-group">
-        <ToolbarButton
-          className="mobile-menu-toggle"
-          aria-label="Abrir menú"
-          icon={mobileMenuOpen ? <DismissRegular /> : <NavigationRegular />}
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        />
         <ToolbarButton
           className="desktop-only"
           aria-label="Alternar menú lateral"
@@ -69,11 +65,11 @@ export function AppShell() {
           style={{ marginRight: '6px' }}
         />
         <Link to="/" className="brand">
-          <img src="/logo.png" alt="Ghost Finance" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', boxShadow: '0 0 14px rgba(0, 210, 255, 0.6)', border: '1px solid rgba(0, 210, 255, 0.4)' }} />
+          <img src="/logo.png" alt="Ghost Finance" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', boxShadow: '0 0 14px rgba(0, 210, 255, 0.6)', border: '1px solid rgba(0, 210, 255, 0.4)' }} />
           <span>GHOST FINANCE</span>
         </Link>
       </div>
-      <Toolbar aria-label="Barra de herramientas de la aplicación">
+      <Toolbar className="desktop-only" aria-label="Barra de herramientas de la aplicación">
         <Tooltip content="Buscar transacciones" relationship="label">
           <ToolbarButton aria-label="Buscar transacciones" icon={<SearchRegular />} onClick={() => navigate('/transactions')} />
         </Tooltip>
@@ -89,12 +85,8 @@ export function AppShell() {
       </Toolbar>
     </header>
 
-    {mobileMenuOpen && (
-      <div className="mobile-overlay" onClick={() => setMobileMenuOpen(false)} />
-    )}
-
     <div className="workspace">
-      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <Body1 className="nav-caption">Espacio de trabajo</Body1>
         <TabList vertical selectedValue={location.pathname} aria-label="Navegación principal">
           {navItems.map((item) => (
@@ -129,6 +121,17 @@ export function AppShell() {
         <Outlet />
       </main>
     </div>
+
+    <MobileBottomNav
+      isMoreOpen={mobileMenuOpen}
+      onToggleMobileMenu={() => setMobileMenuOpen((open) => !open)}
+      onCloseMobileMenu={() => setMobileMenuOpen(false)}
+      onNavigate={handleNavClick}
+      onLogout={logout}
+      moreItems={navItems.filter((item) => !['/', '/commitments', '/chat', '/reports'].includes(item.to))}
+      userName={user?.name ?? 'Usuario'}
+      userEmail={user?.email}
+    />
   </div>;
 }
 

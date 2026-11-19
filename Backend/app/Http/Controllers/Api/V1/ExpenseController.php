@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreExpenseRequest;
 use App\Models\Expense;
 use App\Services\MoneyFormatter;
+use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -72,5 +73,40 @@ class ExpenseController extends Controller
                 'confirmed' => $money->dop($balance),
             ],
         ], $result['created'] ? 201 : 200);
+    }
+
+    public function update(Request $request, int $expense, TransactionService $service, MoneyFormatter $money): JsonResponse
+    {
+        $validated = $request->validate([
+            'account_id' => ['required', 'integer', 'exists:accounts,id'],
+            'category' => ['required', 'string', 'max:64'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'occurred_at' => ['required', 'date'],
+            'description' => ['required', 'string', 'max:500'],
+            'reference_number' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        $result = $service->updateExpense($request->user(), $expense, $validated);
+        $balance = (string) $result['account']->transactions()->sum('amount');
+
+        return response()->json([
+            'data' => [
+                'id' => $result['expense']->id,
+                'account_id' => $result['expense']->account_id,
+                'category' => $result['expense']->category,
+                'amount' => $result['expense']->amount,
+                'occurred_at' => $result['expense']->occurred_at->toDateString(),
+                'description' => $result['expense']->description,
+            ],
+            'balance' => [
+                'confirmed' => $money->dop($balance),
+            ],
+        ]);
+    }
+
+    public function destroy(Request $request, int $expense, TransactionService $service): JsonResponse
+    {
+        $service->deleteExpense($request->user(), $expense);
+        return response()->json(['message' => 'Gasto eliminado correctamente']);
     }
 }

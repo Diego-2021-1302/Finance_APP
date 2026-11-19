@@ -13,6 +13,8 @@ export interface ApiClient {
   getFinanceInsights(): Promise<FinanceInsights>;
   listIncomes(): Promise<IncomeRecord[]>;
   createIncome(input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
+  updateIncome(incomeId: string, input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
+  deleteIncome(incomeId: string): Promise<{ message: string }>;
   recordReceipt(incomeId: string, input: { amount: string; account_id: string; received_at: string; idempotency_key: string }): Promise<{ amount: string; balance: string }>;
   listCommitments(): Promise<{ commitments: CommitmentRecord[]; occurrences: CommitmentRecord[] }>;
   createCommitment(input: {
@@ -61,6 +63,8 @@ export interface ApiClient {
   reconcileAccount(accountId: string, input: { target_balance: string; reason: string }): Promise<AccountRecord>;
   listExpenses(filters?: { from?: string; to?: string; category?: string; account_id?: string }): Promise<ExpenseRecord[]>;
   createExpense(input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null; idempotency_key: string }): Promise<ExpenseRecord>;
+  updateExpense(expenseId: string, input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null }): Promise<ExpenseRecord>;
+  deleteExpense(expenseId: string): Promise<{ message: string }>;
   listTransfers(): Promise<TransferRecord[]>;
   createTransfer(input: { source_account_id: string; destination_account_id: string; amount: string; transferred_at: string; notes?: string | null; idempotency_key: string }): Promise<TransferRecord>;
   listTransactions(filters?: { from?: string; to?: string; account_id?: string; q?: string }): Promise<TransactionRecord[]>;

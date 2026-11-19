@@ -58,21 +58,28 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
     Route::get('/incomes', [IncomeController::class, 'index'])->name('incomes.index');
     Route::post('/incomes', [IncomeController::class, 'store'])->name('incomes.store');
+    Route::put('/incomes/{income}', [IncomeController::class, 'update'])->whereNumber('income')->name('incomes.update');
+    Route::delete('/incomes/{income}', [IncomeController::class, 'destroy'])->whereNumber('income')->name('incomes.destroy');
     Route::post('/incomes/{income}/receipts', [IncomeController::class, 'receipt'])->whereNumber('income')->name('incomes.receipts.store');
+
     Route::get('/commitments', [CommitmentController::class, 'index'])->name('commitments.index');
     Route::post('/commitments', [CommitmentController::class, 'store'])->name('commitments.store');
     Route::put('/commitments/{commitment}', [CommitmentController::class, 'update'])->whereNumber('commitment')->name('commitments.update');
     Route::delete('/commitments/{commitment}', [CommitmentController::class, 'destroy'])->whereNumber('commitment')->name('commitments.destroy');
     Route::post('/commitments/{commitment}/occurrences/{occurrence}/payments', [CommitmentController::class, 'payment'])->whereNumber(['commitment', 'occurrence'])->name('commitments.payments.store');
     Route::post('/payments/{payment}/reversals', [PaymentReversalController::class, 'store'])->whereNumber('payment')->name('payments.reversals.store');
+
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
     Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
     Route::put('/accounts/{account}', [AccountController::class, 'update'])->whereNumber('account')->name('accounts.update');
     Route::delete('/accounts/{account}', [AccountController::class, 'destroy'])->whereNumber('account')->name('accounts.destroy');
     Route::post('/accounts/{account}/archive', [AccountController::class, 'archive'])->whereNumber('account')->name('accounts.archive');
     Route::post('/accounts/{account}/reconcile', [AccountController::class, 'reconcile'])->whereNumber('account')->name('accounts.reconcile');
+
     Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index');
     Route::post('/expenses', [ExpenseController::class, 'store'])->name('expenses.store');
+    Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])->whereNumber('expense')->name('expenses.update');
+    Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])->whereNumber('expense')->name('expenses.destroy');
     Route::get('/transfers', [TransferController::class, 'index'])->name('transfers.index');
     Route::post('/transfers', [TransferController::class, 'store'])->name('transfers.store');
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions.index');

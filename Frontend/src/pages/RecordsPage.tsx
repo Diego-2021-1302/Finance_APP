@@ -34,32 +34,41 @@ export function RecordsPage({ kind }: { kind: RecordKind }) {
 
 function IncomePage() {
   const [showForm, setShowForm] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<IncomeRecord | null>(null);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
-  const incomes = useQuery({ queryKey: ['income'], queryFn: api.listIncomes });
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+  const incomes = useQuery({ queryKey: ['income'], queryFn: api.listIncomes, refetchOnMount: 'always' });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
+
   const create = useMutation({
     mutationFn: api.createIncome,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['income'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
+
+  const updateIncome = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: { source: string; amount: string; expected_date: string } }) => api.updateIncome(id, input),
+    onSuccess: async () => {
+      setEditingIncome(null);
+      await queryClient.invalidateQueries();
+    },
+    onError: (cause) => setError(cause.message),
+  });
+
+  const deleteIncome = useMutation({
+    mutationFn: (id: string) => api.deleteIncome(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries();
+    },
+    onError: (cause) => setError(cause.message),
+  });
+
   const receive = useMutation({
     mutationFn: ({ id, input }: { id: string; input: { amount: string; account_id: string; received_at: string; idempotency_key: string } }) => api.recordReceipt(id, input),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['income'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -74,6 +83,23 @@ function IncomePage() {
       amount: String(data.get('amount')),
       expected_date: String(data.get('expected_date')),
     }, { onSuccess: () => { form.reset(); setShowForm(false); } });
+  }
+
+  function submitUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingIncome?.id) return;
+    setError('');
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const rawAmount = String(data.get('amount')).replace(/[^0-9.]/g, '');
+    updateIncome.mutate({
+      id: editingIncome.id,
+      input: {
+        source: String(data.get('source')),
+        amount: rawAmount,
+        expected_date: String(data.get('expected_date')),
+      },
+    });
   }
 
   function submitReceipt(event: FormEvent<HTMLFormElement>, income: IncomeRecord) {
@@ -95,10 +121,11 @@ function IncomePage() {
   if (incomes.isPending || accounts.isPending) return <LoadingState />;
   if (incomes.isError) return <ErrorState onRetry={() => void incomes.refetch()} />;
   if (accounts.isError) return <ErrorState onRetry={() => void accounts.refetch()} />;
+
   return <>
     <div className="page-intro">
       <p>Planifica ingresos esperados y registra los depósitos en tus cuentas.</p>
-      <Button appearance="primary" onClick={() => setShowForm((value) => !value)}>{showForm ? 'Cancelar' : 'Agregar ingreso'}</Button>
+      <Button appearance="primary" onClick={() => { setEditingIncome(null); setShowForm((value) => !value); }}>{showForm ? 'Cancelar' : 'Agregar ingreso'}</Button>
     </div>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {showForm && <Card className="inline-form">
@@ -112,59 +139,171 @@ function IncomePage() {
         <Button type="submit" appearance="primary" disabled={create.isPending}>{create.isPending ? 'Guardando…' : 'Guardar ingreso'}</Button>
       </form>
     </Card>}
+    {editingIncome && <Card className="inline-form">
+      <div><Subtitle1>Editar ingreso: {editingIncome.source}</Subtitle1><Caption1>Modifica los detalles del ingreso proyectado.</Caption1></div>
+      <form className="finance-form" onSubmit={submitUpdate}>
+        <div className="form-grid">
+          <Field label="Fuente / Concepto" required><Input name="source" defaultValue={editingIncome.source} required maxLength={160} /></Field>
+          <Field label="Monto esperado (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={editingIncome.amount.replace(/[^0-9.]/g, '')} required /></Field>
+          <Field label="Fecha esperada" required><Input name="expected_date" type="date" defaultValue={editingIncome.expectedDate} required /></Field>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+          <Button type="submit" appearance="primary" disabled={updateIncome.isPending}>{updateIncome.isPending ? 'Guardando…' : 'Actualizar ingreso'}</Button>
+          <Button appearance="subtle" onClick={() => setEditingIncome(null)}>Cancelar</Button>
+        </div>
+      </form>
+    </Card>}
     {accounts.data.length === 0 && <MessageBar intent="warning"><MessageBarBody>Crea una cuenta antes de registrar depósitos de ingresos.</MessageBarBody></MessageBar>}
     {incomes.data.length === 0 ? <EmptyState label="No se han registrado ingresos esperados aún." /> : <section className="record-list">
       {incomes.data.map((income) => <Card className="content-card record-card" key={income.id}>
-        <div className="record-heading"><div><Subtitle1>{income.source}</Subtitle1><Caption1>Esperado {income.expectedDate} · {income.status}</Caption1></div><strong>{income.amount}</strong></div>
+        <div className="record-heading">
+          <div><Subtitle1>{income.source}</Subtitle1><Caption1>Esperado {income.expectedDate} · {income.status}</Caption1></div>
+          <div style={{ textAlign: 'right' }}>
+            <strong>{income.amount}</strong>
+          </div>
+        </div>
         <Caption1>Recibido hasta ahora: {income.receivedAmount ?? 'RD$ 0.00'}</Caption1>
         {income.status !== 'Recibido' && accounts.data.length > 0 && <details className="debt-action">
           <summary>Registrar depósito en cuenta</summary>
           <form className="debt-action-form" onSubmit={(event) => submitReceipt(event, income)}>
             <Field label="Monto a depositar (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" required /></Field>
-            <Field label="Depositar en cuenta" required><select name="account_id" required defaultValue=""><option value="" disabled>Seleccionar cuenta</option>{accounts.data.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></Field>
+            <Field label="Depositar en cuenta" required><select name="account_id" required defaultValue=""><option value="" disabled>Seleccionar cuenta</option>{accounts.data.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.balance})</option>)}</select></Field>
             <Field label="Fecha de recepción" required><Input name="received_at" type="date" defaultValue={today} required /></Field>
             <Button type="submit" appearance="primary" disabled={receive.isPending}>Registrar depósito</Button>
           </form>
         </details>}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+          <Button appearance="subtle" size="small" onClick={() => { setShowForm(false); setEditingIncome(income); }}>Editar ingreso</Button>
+          <Button appearance="subtle" size="small" style={{ color: '#ff4d4f' }} onClick={() => { if (confirm(`¿Deseas eliminar el ingreso "${income.source}"?`)) deleteIncome.mutate(income.id!); }}>Eliminar ingreso</Button>
+        </div>
       </Card>)}
     </section>}
   </>;
 }
 
+function parseNumericBalance(balanceStr?: string): number {
+  if (!balanceStr) return 0;
+  const isNegative = balanceStr.includes('−') || balanceStr.includes('-');
+  const cleaned = balanceStr.replace(/[^0-9.]/g, '');
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return 0;
+  return isNegative ? -num : num;
+}
+
 function ExpensesPage() {
   const [showForm, setShowForm] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [enteredAmount, setEnteredAmount] = useState('');
+  const [editAccountId, setEditAccountId] = useState('');
+  const [editAmount, setEditAmount] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
-  const expenses = useQuery({ queryKey: ['expenses'], queryFn: () => api.listExpenses() });
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+  const expenses = useQuery({ queryKey: ['expenses'], queryFn: () => api.listExpenses(), refetchOnMount: 'always' });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
+
   const create = useMutation({
     mutationFn: api.createExpense,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['expenses'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
+
+  const updateExpense = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null } }) => api.updateExpense(id, input),
+    onSuccess: async () => {
+      setEditingExpense(null);
+      await queryClient.invalidateQueries();
+    },
+    onError: (cause) => setError(cause.message),
+  });
+
+  const deleteExpense = useMutation({
+    mutationFn: (id: string) => api.deleteExpense(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries();
+    },
+    onError: (cause) => setError(cause.message),
+  });
+
+  const selectedAcc = accounts.data?.find((a) => a.id === selectedAccountId);
+  const accBalance = selectedAcc ? parseNumericBalance(selectedAcc.balance) : 0;
+  const numAmount = parseFloat(enteredAmount) || 0;
+  const isCreditCard = selectedAcc?.type === 'credit_card';
+  const isInsufficient = selectedAcc && !isCreditCard && numAmount > 0 && accBalance < numAmount;
+
+  // Edit form balance calculation
+  const editAcc = accounts.data?.find((a) => a.id === editAccountId);
+  const editAccBal = editAcc ? parseNumericBalance(editAcc.balance) : 0;
+  const editNumAmt = parseFloat(editAmount) || 0;
+  const isEditCc = editAcc?.type === 'credit_card';
+  const oldAmt = editingExpense && editingExpense.account_id === editAccountId ? parseNumericBalance(editingExpense.amount) : 0;
+  const editAvailable = editAccBal + oldAmt;
+  const isEditInsufficient = editAcc && !isEditCc && editNumAmt > 0 && editAvailable < editNumAmt;
 
   function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     const form = event.currentTarget;
     const data = new FormData(form);
+    const accountId = String(data.get('account_id'));
+    const amountStr = String(data.get('amount'));
+
+    const selAcc = accounts.data?.find((a) => a.id === accountId);
+    const accBal = selAcc ? parseNumericBalance(selAcc.balance) : 0;
+    const numAmt = parseFloat(amountStr) || 0;
+    const isCc = selAcc?.type === 'credit_card';
+
+    if (selAcc && !isCc && numAmt > 0 && accBal < numAmt) {
+      setError(`La cuenta "${selAcc.name}" no tiene fondos suficientes. Balance disponible: ${selAcc.balance}`);
+      return;
+    }
+
     create.mutate({
-      account_id: String(data.get('account_id')),
+      account_id: accountId,
       category: String(data.get('category')),
-      amount: String(data.get('amount')),
+      amount: amountStr,
       occurred_at: String(data.get('occurred_at')),
       description: String(data.get('description')),
       reference_number: String(data.get('reference_number') || '') || null,
       idempotency_key: createUuid(),
-    }, { onSuccess: () => { form.reset(); setShowForm(false); } });
+    }, { onSuccess: () => { form.reset(); setShowForm(false); setSelectedAccountId(''); setEnteredAmount(''); } });
+  }
+
+  function submitUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingExpense?.id) return;
+    setError('');
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const accountId = String(data.get('account_id'));
+    const amountStr = String(data.get('amount'));
+
+    const selAcc = accounts.data?.find((a) => a.id === accountId);
+    const accBal = selAcc ? parseNumericBalance(selAcc.balance) : 0;
+    const numAmt = parseFloat(amountStr) || 0;
+    const isCc = selAcc?.type === 'credit_card';
+
+    const oldAmountNum = editingExpense.account_id === accountId ? parseNumericBalance(editingExpense.amount) : 0;
+    const availableBal = accBal + oldAmountNum;
+
+    if (selAcc && !isCc && numAmt > 0 && availableBal < numAmt) {
+      setError(`La cuenta "${selAcc.name}" no tiene fondos suficientes. Balance disponible: RD$ ${availableBal.toFixed(2)}`);
+      return;
+    }
+
+    updateExpense.mutate({
+      id: editingExpense.id,
+      input: {
+        account_id: accountId,
+        category: String(data.get('category')),
+        amount: amountStr,
+        occurred_at: String(data.get('occurred_at')),
+        description: String(data.get('description')),
+        reference_number: String(data.get('reference_number') || '') || null,
+      },
+    });
   }
 
   if (expenses.isPending || accounts.isPending) return <LoadingState />;
@@ -174,7 +313,7 @@ function ExpensesPage() {
   return <>
     <div className="page-intro">
       <p>Registra compras o consumos directos debitando inmediatamente de tu cuenta.</p>
-      <Button appearance="primary" onClick={() => setShowForm((value) => !value)}>{showForm ? 'Cancelar' : 'Registrar gasto'}</Button>
+      <Button appearance="primary" onClick={() => { setEditingExpense(null); setShowForm((value) => !value); }}>{showForm ? 'Cancelar' : 'Registrar gasto'}</Button>
     </div>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {showForm && <Card className="inline-form">
@@ -183,17 +322,91 @@ function ExpensesPage() {
         <div className="form-grid">
           <Field label="Descripción / Concepto" required><Input name="description" required maxLength={500} placeholder="ej. Supermercado o Combustible" /></Field>
           <Field label="Categoría" required><select name="category" required defaultValue="Alimentación">{billCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}</select></Field>
-          <Field label="Monto (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" required /></Field>
-          <Field label="Cuenta de origen" required><select name="account_id" required defaultValue=""><option value="" disabled>Seleccionar cuenta</option>{accounts.data.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></Field>
+          <Field label="Monto (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" value={enteredAmount} onChange={(e) => setEnteredAmount(e.target.value)} required /></Field>
+          <Field label="Cuenta de origen" required>
+            <select name="account_id" required value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)}>
+              <option value="" disabled>Seleccionar cuenta</option>
+              {accounts.data.map((account) => {
+                const bal = parseNumericBalance(account.balance);
+                const isCc = account.type === 'credit_card';
+                const noFunds = !isCc && numAmount > 0 && bal < numAmount;
+                return (
+                  <option key={account.id} value={account.id} disabled={noFunds}>
+                    {account.name} ({account.balance}){noFunds ? ' ❌ (Sin fondos suficientes)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </Field>
           <Field label="Fecha del gasto" required><Input name="occurred_at" type="date" defaultValue={today} required /></Field>
           <Field label="Referencia / NCF (opcional)"><Input name="reference_number" maxLength={80} /></Field>
         </div>
-        <Button type="submit" appearance="primary" disabled={create.isPending}>{create.isPending ? 'Guardando…' : 'Guardar gasto'}</Button>
+        {isInsufficient && (
+          <MessageBar intent="error" style={{ marginTop: '10px' }}>
+            <MessageBarBody>⚠️ Balance insuficiente: La cuenta "{selectedAcc?.name}" dispone de {selectedAcc?.balance} y no cubre el gasto de RD$ {numAmount.toFixed(2)}.</MessageBarBody>
+          </MessageBar>
+        )}
+        <Button type="submit" appearance="primary" disabled={create.isPending || Boolean(isInsufficient)} style={{ marginTop: '12px' }}>{create.isPending ? 'Guardando…' : 'Guardar gasto'}</Button>
       </form>
     </Card>}
+
+    {editingExpense && <Card className="inline-form">
+      <div><Subtitle1>Editar gasto directo: {editingExpense.description}</Subtitle1><Caption1>Modifica la categoría, cuenta o monto del gasto.</Caption1></div>
+      <form className="finance-form" onSubmit={submitUpdate}>
+        <div className="form-grid">
+          <Field label="Descripción / Concepto" required><Input name="description" defaultValue={editingExpense.description} required maxLength={500} /></Field>
+          <Field label="Categoría" required><select name="category" required defaultValue={editingExpense.category}>{billCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}</select></Field>
+          <Field label="Monto (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={editAmount || editingExpense.amount.replace(/[^0-9.]/g, '')} onChange={(e) => setEditAmount(e.target.value)} required /></Field>
+          <Field label="Cuenta de origen" required>
+            <select name="account_id" required defaultValue={editAccountId || editingExpense.account_id} onChange={(e) => setEditAccountId(e.target.value)}>
+              <option value="" disabled>Seleccionar cuenta</option>
+              {accounts.data.map((account) => {
+                const bal = parseNumericBalance(account.balance);
+                const isCc = account.type === 'credit_card';
+                const oldAmtNum = editingExpense?.account_id === account.id ? parseNumericBalance(editingExpense.amount) : 0;
+                const availableBal = bal + oldAmtNum;
+                const noFunds = !isCc && editNumAmt > 0 && availableBal < editNumAmt;
+                return (
+                  <option key={account.id} value={account.id} disabled={noFunds}>
+                    {account.name} ({account.balance}){noFunds ? ' ❌ (Sin fondos suficientes)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </Field>
+          <Field label="Fecha del gasto" required><Input name="occurred_at" type="date" defaultValue={editingExpense.occurred_at} required /></Field>
+          <Field label="Referencia / NCF (opcional)"><Input name="reference_number" defaultValue={editingExpense.reference_number || ''} maxLength={80} /></Field>
+        </div>
+        {isEditInsufficient && (
+          <MessageBar intent="error" style={{ marginTop: '10px' }}>
+            <MessageBarBody>⚠️ Balance insuficiente: La cuenta "{editAcc?.name}" dispone de RD$ {editAvailable.toFixed(2)} disponible y no cubre el monto de RD$ {editNumAmt.toFixed(2)}.</MessageBarBody>
+          </MessageBar>
+        )}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          <Button type="submit" appearance="primary" disabled={updateExpense.isPending || Boolean(isEditInsufficient)}>{updateExpense.isPending ? 'Guardando…' : 'Actualizar gasto'}</Button>
+          <Button appearance="subtle" onClick={() => setEditingExpense(null)}>Cancelar</Button>
+        </div>
+      </form>
+    </Card>}
+
     {accounts.data.length === 0 && <MessageBar intent="warning"><MessageBarBody>Crea una cuenta antes de registrar un gasto.</MessageBarBody></MessageBar>}
     {expenses.data.length === 0 ? <EmptyState label="No hay gastos directos registrados aún." /> :
-      <FinanceTable columns={['Descripción', 'Categoría', 'Cuenta', 'Fecha', 'Monto']} rows={expenses.data.map((exp: ExpenseRecord) => ({ Descripción: exp.description, Categoría: exp.category, Cuenta: exp.account || '—', Fecha: exp.occurred_at, Monto: exp.amount }))} />}
+      <FinanceTable
+        columns={['Descripción', 'Categoría', 'Cuenta', 'Fecha', 'Monto', 'Acciones']}
+        rows={expenses.data.map((exp: ExpenseRecord) => ({
+          Descripción: exp.description,
+          Categoría: exp.category,
+          Cuenta: exp.account || '—',
+          Fecha: exp.occurred_at,
+          Monto: exp.amount,
+          Acciones: (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <Button appearance="subtle" size="small" onClick={() => { setShowForm(false); setEditingExpense(exp); setEditAccountId(exp.account_id); setEditAmount(exp.amount.replace(/[^0-9.]/g, '')); }}>Editar</Button>
+              <Button appearance="subtle" size="small" style={{ color: '#ff4d4f' }} onClick={() => { if (confirm(`¿Deseas eliminar este gasto de ${exp.amount}?`)) deleteExpense.mutate(exp.id!); }}>Eliminar</Button>
+            </div>
+          ),
+        }))}
+      />}
   </>;
 }
 
@@ -201,17 +414,12 @@ function TransfersPage() {
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
-  const transfers = useQuery({ queryKey: ['transfers'], queryFn: () => api.listTransfers() });
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+  const transfers = useQuery({ queryKey: ['transfers'], queryFn: () => api.listTransfers(), refetchOnMount: 'always' });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
   const create = useMutation({
     mutationFn: api.createTransfer,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['transfers'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -272,18 +480,13 @@ function CommitmentsPage() {
   const [error, setError] = useState('');
   const [commitmentType, setCommitmentType] = useState<CommitmentType>('utility');
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ['commitments'], queryFn: api.listCommitments });
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+  const query = useQuery({ queryKey: ['commitments'], queryFn: api.listCommitments, refetchOnMount: 'always' });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
 
   const create = useMutation({
     mutationFn: api.createCommitment,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -292,11 +495,7 @@ function CommitmentsPage() {
     mutationFn: ({ commitmentId, input }: { commitmentId: string; input: any }) => api.updateCommitment(commitmentId, input),
     onSuccess: async () => {
       setEditingCommitment(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -304,11 +503,7 @@ function CommitmentsPage() {
   const deleteCommitment = useMutation({
     mutationFn: (commitmentId: string) => api.deleteCommitment(commitmentId),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -316,14 +511,7 @@ function CommitmentsPage() {
   const pay = useMutation({
     mutationFn: ({ id, occurrenceId, input }: { id: string; occurrenceId: string; input: { amount: string; account_id: string; paid_at: string; idempotency_key: string } }) => api.recordCommitmentPayment(id, occurrenceId, input),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -557,7 +745,7 @@ function CalendarPage() {
   const lastDay = new Date(Date.UTC(year, monthNumber, 0));
   const from = firstDay.toISOString().slice(0, 10);
   const to = lastDay.toISOString().slice(0, 10);
-  const query = useQuery({ queryKey: ['calendar', from, to], queryFn: () => api.listCalendar(from, to) });
+  const query = useQuery({ queryKey: ['calendar', from, to], queryFn: () => api.listCalendar(from, to), refetchOnMount: 'always' });
   const shiftMonth = (amount: number) => {
     const date = new Date(Date.UTC(year, monthNumber - 1 + amount, 1));
     setMonth(date.toISOString().slice(0, 7));
@@ -579,19 +767,12 @@ function TransactionsPage() {
   const [draftFilters, setDraftFilters] = useState(filters);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
-  const query = useQuery({ queryKey: ['transactions', filters], queryFn: () => api.listTransactions(filters) });
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
+  const query = useQuery({ queryKey: ['transactions', filters], queryFn: () => api.listTransactions(filters), refetchOnMount: 'always' });
   const reverse = useMutation({
     mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) => api.reversePayment(paymentId, { reason, idempotency_key: createUuid() }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['income'] }),
-        queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -636,16 +817,12 @@ function AccountsPage() {
   const [editingAccount, setEditingAccount] = useState<AccountRecord | null>(null);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+  const query = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
 
   const create = useMutation({
     mutationFn: api.createFinancialAccount,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -654,10 +831,7 @@ function AccountsPage() {
     mutationFn: ({ accountId, input }: { accountId: string; input: { name: string; institution?: string | null; type: string } }) => api.updateFinancialAccount(accountId, input),
     onSuccess: async () => {
       setEditingAccount(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -665,11 +839,7 @@ function AccountsPage() {
   const deleteAccount = useMutation({
     mutationFn: (accountId: string) => api.deleteFinancialAccount(accountId),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });
@@ -677,11 +847,7 @@ function AccountsPage() {
   const reconcile = useMutation({
     mutationFn: ({ accountId, input }: { accountId: string; input: { target_balance: string; reason: string } }) => api.reconcileAccount(accountId, input),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ]);
+      await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
   });

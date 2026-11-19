@@ -401,6 +401,26 @@ export const liveClient: ApiClient = {
     };
   },
 
+  async updateIncome(incomeId: string, input: { source: string; amount: string; expected_date: string }) {
+    const result = await request<Envelope<IncomeResponse>>(`/incomes/${encodeURIComponent(incomeId)}`, {
+      method: 'PUT',
+      body: jsonBody(input),
+    });
+    return {
+      id: String(result.data.id),
+      source: result.data.source,
+      amount: toMoney(result.data.amount),
+      expectedDate: displayDate(result.data.expected_date),
+      status: displayStatus(result.data.status),
+    };
+  },
+
+  async deleteIncome(incomeId: string) {
+    return await request<{ message: string }>(`/incomes/${encodeURIComponent(incomeId)}`, {
+      method: 'DELETE',
+    });
+  },
+
   async recordReceipt(incomeId, input) {
     const result = await request<{
       data: { id: number; amount: string };
@@ -596,6 +616,30 @@ export const liveClient: ApiClient = {
       occurred_at: displayDate(result.data.occurred_at),
       description: result.data.description,
     };
+  },
+
+  async updateExpense(expenseId: string, input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null }) {
+    const result = await request<{
+      data: { id: number; account_id: number; category: string; amount: string; occurred_at: string; description: string };
+      balance: { confirmed: string };
+    }>(`/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'PUT',
+      body: jsonBody(input),
+    });
+    return {
+      id: String(result.data.id),
+      account_id: String(result.data.account_id),
+      category: result.data.category,
+      amount: toMoney(result.data.amount),
+      occurred_at: displayDate(result.data.occurred_at),
+      description: result.data.description,
+    };
+  },
+
+  async deleteExpense(expenseId: string) {
+    return await request<{ message: string }>(`/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'DELETE',
+    });
   },
 
   async listTransfers() {

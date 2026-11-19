@@ -15,13 +15,7 @@ export function DebtBalancesSection() {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
 
   const invalidateDebtData = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['debts'] }),
-      queryClient.invalidateQueries({ queryKey: ['debt-history'] }),
-      queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-      queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-    ]);
+    await queryClient.invalidateQueries();
   };
 
   const increaseDebt = useMutation({

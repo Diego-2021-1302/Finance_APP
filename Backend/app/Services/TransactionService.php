@@ -39,6 +39,16 @@ class TransactionService
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            if ($account->type !== 'credit_card') {
+                $currentBalance = (string) ($account->transactions()->sum('amount') ?: '0.00');
+                if (bccomp($currentBalance, (string) $input['amount'], 2) < 0) {
+                    $formattedBalance = number_format((float) $currentBalance, 2, '.', ',');
+                    throw ValidationException::withMessages([
+                        'account_id' => [sprintf('La cuenta "%s" no tiene fondos suficientes para este gasto. (Balance disponible: RD$ %s)', $account->name, $formattedBalance)],
+                    ]);
+                }
+            }
+
             $occurredAt = Carbon::parse($input['occurred_at']);
 
             $expense = Expense::query()->create([
@@ -216,6 +226,100 @@ class TransactionService
             ]);
 
             return ['account' => $locked->refresh(), 'adjustment_amount' => $difference];
+        }, 3);
+    }
+
+    public function updateExpense(User $user, int $expenseId, array $input): array
+    {
+        return DB::transaction(function () use ($user, $expenseId, $input) {
+            $expense = Expense::query()->where('user_id', $user->id)->whereKey($expenseId)->firstOrFail();
+            $newAccount = Account::query()->where('user_id', $user->id)->where('is_active', true)->whereKey($input['account_id'])->lockForUpdate()->firstOrFail();
+            $oldAccount = Account::query()->where('user_id', $user->id)->whereKey($expense->account_id)->firstOrFail();
+            $occurredAt = Carbon::parse($input['occurred_at']);
+
+            if ($newAccount->type !== 'credit_card') {
+                $currentBalance = (string) ($newAccount->transactions()->sum('amount') ?: '0.00');
+                $available = ($newAccount->id === $oldAccount->id)
+                    ? bcadd($currentBalance, (string) $expense->amount, 2)
+                    : $currentBalance;
+
+                if (bccomp($available, (string) $input['amount'], 2) < 0) {
+                    $formatted = number_format((float) $available, 2, '.', ',');
+                    throw ValidationException::withMessages([
+                        'account_id' => [sprintf('La cuenta "%s" no tiene fondos suficientes para este monto. Balance disponible: RD$ %s', $newAccount->name, $formatted)],
+                    ]);
+                }
+            }
+
+            $tx = FinancialTransaction::query()
+                ->where('user_id', $user->id)
+                ->where('account_id', $expense->account_id)
+                ->where('kind', 'expense')
+                ->where('occurred_at', $expense->occurred_at)
+                ->first();
+
+            if ($tx) {
+                $tx->update([
+                    'account_id' => $newAccount->id,
+                    'description' => sprintf('%s: %s', $input['category'], $input['description']),
+                    'amount' => bcsub('0.00', (string) $input['amount'], 2),
+                    'occurred_at' => $occurredAt,
+                ]);
+            }
+
+            if ($oldAccount->type === 'credit_card') {
+                $debt = \App\Models\Debt::query()->where('user_id', $user->id)->where('account_id', $oldAccount->id)->first();
+                if ($debt) {
+                    $debt->update([
+                        'outstanding_amount' => bcsub((string) $debt->outstanding_amount, (string) $expense->amount, 2),
+                    ]);
+                }
+            }
+            if ($newAccount->type === 'credit_card') {
+                $debt = \App\Models\Debt::query()->where('user_id', $user->id)->where('account_id', $newAccount->id)->first();
+                if ($debt) {
+                    $debt->update([
+                        'outstanding_amount' => bcadd((string) $debt->outstanding_amount, (string) $input['amount'], 2),
+                    ]);
+                }
+            }
+
+            $expense->update([
+                'account_id' => $newAccount->id,
+                'category' => $input['category'],
+                'amount' => $input['amount'],
+                'occurred_at' => $occurredAt,
+                'description' => $input['description'],
+                'reference_number' => $input['reference_number'] ?? null,
+            ]);
+
+            return ['expense' => $expense->refresh(), 'account' => $newAccount->refresh()];
+        }, 3);
+    }
+
+    public function deleteExpense(User $user, int $expenseId): void
+    {
+        DB::transaction(function () use ($user, $expenseId) {
+            $expense = Expense::query()->where('user_id', $user->id)->whereKey($expenseId)->firstOrFail();
+            $account = Account::query()->where('user_id', $user->id)->whereKey($expense->account_id)->firstOrFail();
+
+            FinancialTransaction::query()
+                ->where('user_id', $user->id)
+                ->where('account_id', $expense->account_id)
+                ->where('kind', 'expense')
+                ->where('occurred_at', $expense->occurred_at)
+                ->delete();
+
+            if ($account->type === 'credit_card') {
+                $debt = \App\Models\Debt::query()->where('user_id', $user->id)->where('account_id', $account->id)->first();
+                if ($debt) {
+                    $debt->update([
+                        'outstanding_amount' => bcsub((string) $debt->outstanding_amount, (string) $expense->amount, 2),
+                    ]);
+                }
+            }
+
+            $expense->delete();
         }, 3);
     }
 }

@@ -16,17 +16,7 @@ export function ChatPage() {
   });
 
   const invalidateAll = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['chat-messages'] }),
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-      queryClient.invalidateQueries({ queryKey: ['income'] }),
-      queryClient.invalidateQueries({ queryKey: ['commitments'] }),
-      queryClient.invalidateQueries({ queryKey: ['debt-history'] }),
-      queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-      queryClient.invalidateQueries({ queryKey: ['cash-flow'] }),
-      queryClient.invalidateQueries({ queryKey: ['calendar'] }),
-    ]);
+    await queryClient.invalidateQueries();
   };
 
   const sendMutation = useMutation({

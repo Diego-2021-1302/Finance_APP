@@ -85,6 +85,14 @@ class AccountMovementTest extends TestCase
             'currency' => 'DOP',
             'is_active' => true,
         ]);
+        FinancialTransaction::create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'description' => 'Balance inicial',
+            'amount' => '5000.00',
+            'occurred_at' => now(),
+            'kind' => 'account_opening',
+        ]);
         $token = $user->createToken('test-token')->plainTextToken;
 
         $response = $this->withToken($token)->postJson('/api/v1/expenses', [
@@ -103,7 +111,7 @@ class AccountMovementTest extends TestCase
             'category' => 'Combustible',
         ]);
 
-        $this->assertEquals('-2000.00', FinancialTransaction::where('account_id', $account->id)->sum('amount'));
+        $this->assertEquals('3000.00', (string) FinancialTransaction::where('account_id', $account->id)->sum('amount'));
     }
 
     public function test_credit_card_expense_updates_debt_balance(): void
@@ -173,5 +181,78 @@ class AccountMovementTest extends TestCase
         // Total user wealth remains exactly 25000.00
         $totalWealth = FinancialTransaction::where('user_id', $user->id)->sum('amount');
         $this->assertEquals('25000.00', $totalWealth);
+    }
+
+    public function test_user_cannot_record_expense_with_insufficient_funds(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::create(['user_id' => $user->id, 'name' => 'Ahorros', 'type' => 'savings', 'currency' => 'DOP', 'is_active' => true]);
+        FinancialTransaction::create(['user_id' => $user->id, 'account_id' => $account->id, 'description' => 'Depósito', 'amount' => '500.00', 'occurred_at' => now(), 'kind' => 'account_opening']);
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/expenses', [
+            'account_id' => $account->id,
+            'category' => 'Alimentación',
+            'amount' => '1500.00',
+            'occurred_at' => now()->toDateString(),
+            'description' => 'Supermercado grande',
+            'idempotency_key' => '123e4567-e89b-12d3-a456-426614174777',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+    }
+
+    public function test_user_can_update_and_delete_income(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $createResp = $this->withToken($token)->postJson('/api/v1/incomes', [
+            'source' => 'Trabajo freelance',
+            'amount' => '10000.00',
+            'expected_date' => now()->toDateString(),
+        ])->assertCreated();
+
+        $incomeId = $createResp->json('data.id');
+
+        $this->withToken($token)->putJson("/api/v1/incomes/{$incomeId}", [
+            'source' => 'Trabajo freelance actualizado',
+            'amount' => '12000.00',
+            'expected_date' => now()->toDateString(),
+        ])->assertOk()->assertJsonPath('data.source', 'Trabajo freelance actualizado');
+
+        $this->withToken($token)->deleteJson("/api/v1/incomes/{$incomeId}")->assertOk();
+        $this->assertDatabaseMissing('incomes', ['id' => $incomeId]);
+    }
+
+    public function test_user_can_update_and_delete_expense(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::create(['user_id' => $user->id, 'name' => 'Corriente', 'type' => 'checking', 'currency' => 'DOP', 'is_active' => true]);
+        FinancialTransaction::create(['user_id' => $user->id, 'account_id' => $account->id, 'description' => 'Fondo inicial', 'amount' => '10000.00', 'occurred_at' => now(), 'kind' => 'account_opening']);
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $createResp = $this->withToken($token)->postJson('/api/v1/expenses', [
+            'account_id' => $account->id,
+            'category' => 'Combustible',
+            'amount' => '2000.00',
+            'occurred_at' => now()->toDateString(),
+            'description' => 'Gasolina',
+            'idempotency_key' => '123e4567-e89b-12d3-a456-426614174666',
+        ])->assertCreated();
+
+        $expenseId = $createResp->json('data.id');
+
+        $this->withToken($token)->putJson("/api/v1/expenses/{$expenseId}", [
+            'account_id' => $account->id,
+            'category' => 'Combustible',
+            'amount' => '2500.00',
+            'occurred_at' => now()->toDateString(),
+            'description' => 'Gasolina Premium',
+        ])->assertOk()->assertJsonPath('data.description', 'Gasolina Premium');
+
+        $this->withToken($token)->deleteJson("/api/v1/expenses/{$expenseId}")->assertOk();
+        $this->assertDatabaseMissing('expenses', ['id' => $expenseId]);
     }
 }

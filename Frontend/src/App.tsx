@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { Button, FluentProvider, createDarkTheme, type BrandVariants } from '@fluentui/react-components';
+import { FluentProvider, createDarkTheme, type BrandVariants } from '@fluentui/react-components';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
+import { FullPageLoader } from './components/FullPageLoader';
 import { DashboardPage } from './pages/DashboardPage';
 import { ChatPage } from './pages/ChatPage';
 import { RecordsPage } from './pages/RecordsPage';
@@ -30,13 +31,20 @@ export default function App() {
 
 function AuthRoutes() {
   const { user, ready, sessionRestoreFailed, retrySessionRestore } = useAuth();
-  if (!ready) return <div className="auth-loading">Cargando tu espacio de trabajo seguro…</div>;
-  if (sessionRestoreFailed) {
-    return <div className="auth-loading" role="alert">
-      <p>No se pudo verificar tu sesión guardada. Tu inicio de sesión no se ha borrado.</p>
-      <Button appearance="primary" onClick={retrySessionRestore}>Reintentar</Button>
-    </div>;
+
+  if (!ready) {
+    return <FullPageLoader message="Cargando tu espacio de trabajo seguro…" />;
   }
+
+  if (sessionRestoreFailed) {
+    return (
+      <FullPageLoader
+        error="No se pudo verificar tu sesión guardada. Tu inicio de sesión no se ha borrado."
+        onRetry={retrySessionRestore}
+      />
+    );
+  }
+
   return <Routes>
     <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
     <Route path="/create-account" element={user ? <Navigate to="/" replace /> : <CreateAccountPage />} />

@@ -7,10 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreIncomeRequest;
 use App\Http\Requests\StoreReceiptRequest;
 use App\Models\Account;
+use App\Models\FinancialTransaction;
 use App\Models\Income;
 use App\Services\MoneyFormatter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class IncomeController extends Controller
 {
@@ -40,6 +42,28 @@ class IncomeController extends Controller
     {
         $income = Income::query()->create($request->validated() + ['user_id' => $request->user()->id]);
         return response()->json(['data' => $this->serialize($income)], 201);
+    }
+
+    public function update(StoreIncomeRequest $request, int $income): JsonResponse
+    {
+        $record = Income::query()->where('user_id', $request->user()->id)->whereKey($income)->firstOrFail();
+        $record->update($request->validated());
+        $record->load('payments');
+        return response()->json(['data' => $this->serialize($record->refresh())]);
+    }
+
+    public function destroy(Request $request, int $income): JsonResponse
+    {
+        $record = Income::query()->where('user_id', $request->user()->id)->whereKey($income)->firstOrFail();
+        DB::transaction(function () use ($record) {
+            foreach ($record->payments as $payment) {
+                FinancialTransaction::query()->where('payment_id', $payment->id)->delete();
+                $payment->delete();
+            }
+            $record->delete();
+        });
+
+        return response()->json(['message' => 'Ingreso eliminado correctamente']);
     }
 
     public function receipt(StoreReceiptRequest $request, int $income, RecordIncomeReceipt $action, MoneyFormatter $money): JsonResponse
