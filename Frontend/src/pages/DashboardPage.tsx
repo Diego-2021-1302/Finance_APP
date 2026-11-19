@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardHeader, Caption1, Subtitle1 } from '@fluentui/react-components';
 import {
-  WalletRegular, MoneyRegular, CalendarRegular, ArrowUpRightRegular, AlertRegular,
+  WalletRegular, MoneyRegular, ArrowUpRightRegular, AlertRegular, ShieldLockRegular,
 } from '@fluentui/react-icons';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -18,12 +18,13 @@ export function DashboardPage() {
 
   const summary = query.data;
   const accounts = accountsQuery.data;
+  const liquidAccounts = accounts.filter((account) => account.type !== 'credit_card');
 
   const metrics = [
-    { label: 'Dinero total disponible', value: summary.balances.confirmed, detail: `${summary.balances.accountCount} cuentas activas`, icon: <WalletRegular /> },
-    { label: 'Deuda total acumulada', value: summary.balances.totalDebt ?? 'RD$ 0.00', detail: 'Tarjetas y préstamos', icon: <AlertRegular /> },
-    { label: 'Ingresos recibidos este mes', value: summary.income.received, detail: `Cobros de ${currentMonth}`, icon: <MoneyRegular /> },
-    { label: 'Compromisos próximos', value: summary.commitments.dueSoon, detail: summary.commitments.dueSoonLabel, icon: <CalendarRegular /> },
+    { label: 'Saldo real en cuentas', value: summary.balances.real, detail: `${summary.balances.accountCount} cuentas registradas`, icon: <WalletRegular /> },
+    { label: 'Dinero reservado', value: summary.balances.reserved ?? 'RD$ 0.00', detail: 'Fondos apartados para obligaciones', icon: <ShieldLockRegular /> },
+    { label: 'Disponible sin comprometer', value: summary.balances.availableUncommitted ?? summary.balances.real, detail: 'Saldo real menos reservas activas', icon: <MoneyRegular /> },
+    { label: 'Deuda registrada', value: summary.balances.totalDebt ?? 'RD$ 0.00', detail: 'Saldos de tarjetas y préstamos', icon: <AlertRegular /> },
   ];
 
   return (
@@ -39,7 +40,7 @@ export function DashboardPage() {
         ))}
       </section>
 
-      {/* Main Content Grid: Priority Payments & Account Summaries */}
+      {/* Main Content Grid: Priority Payments & Budgets */}
       <section className="content-grid dashboard-grid">
         {/* Priority Commitment Payments */}
         <Card className="content-card">
@@ -68,19 +69,35 @@ export function DashboardPage() {
           )}
         </Card>
 
-        {/* Account Summaries & Quick Link */}
+        {/* Budgets & Account Summaries */}
         <Card className="content-card account-card">
           <div className="section-title">
             <div>
-              <Subtitle1>Saldos por Cuenta</Subtitle1>
-              <Caption1>Liquidez real disponible en tus cuentas</Caption1>
+              <Subtitle1>Presupuestos del Mes</Subtitle1>
+              <Caption1>Control de gastos por categoría</Caption1>
             </div>
           </div>
-          <div className="account-balance">{summary.balances.confirmed}</div>
-          <Caption1>Dinero total disponible</Caption1>
+          {summary.budgets && summary.budgets.length > 0 ? (
+            <div style={{ display: 'grid', gap: '12px', marginTop: '14px' }}>
+              {summary.budgets.map((b) => (
+                <div key={b.category} style={{ fontSize: '13px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <strong>{b.category}</strong>
+                    <span>{b.spent} / {b.limit}</span>
+                  </div>
+                  <div style={{ background: 'var(--border-subtle)', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, b.percentage)}%`, background: b.percentage > 90 ? 'var(--color-status-danger)' : 'var(--primary)', height: '100%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-inline" style={{ marginTop: '14px' }}>No hay presupuestos configurados para este mes.</div>
+          )}
 
-          <div style={{ display: 'grid', gap: '10px', marginTop: '20px' }}>
-            {accounts.map((acc) => (
+          <div style={{ display: 'grid', gap: '10px', marginTop: '24px' }}>
+            <Subtitle1 style={{ fontSize: '14px' }}>Saldos por Cuenta</Subtitle1>
+            {liquidAccounts.map((acc) => (
               <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span>{acc.name}</span>
                 <strong style={{ color: 'var(--primary)' }}>{acc.balance}</strong>

@@ -106,6 +106,42 @@ class AccountMovementTest extends TestCase
         $this->assertEquals('-2000.00', FinancialTransaction::where('account_id', $account->id)->sum('amount'));
     }
 
+    public function test_credit_card_expense_updates_debt_balance(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $user->id,
+            'name' => 'Tarjeta principal',
+            'type' => 'credit_card',
+            'currency' => 'DOP',
+            'is_active' => true,
+        ]);
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/v1/expenses', [
+            'account_id' => $account->id,
+            'category' => 'Compras',
+            'amount' => '1200.00',
+            'occurred_at' => now()->toDateString(),
+            'description' => 'Compra con tarjeta',
+            'idempotency_key' => '123e4567-e89b-12d3-a456-426614174998',
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'outstanding_amount' => '1200.00',
+            'minimum_payment' => '0.00',
+            'minimum_payment_confirmed' => false,
+        ]);
+        $this->assertDatabaseHas('debt_balance_movements', [
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'kind' => 'increase',
+            'delta' => '1200.00',
+        ]);
+    }
+
     public function test_internal_transfer_does_not_alter_total_user_wealth(): void
     {
         $user = User::factory()->create();

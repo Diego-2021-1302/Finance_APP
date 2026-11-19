@@ -23,6 +23,7 @@ class StoreCommitmentRequest extends FormRequest
                 'statement_day' => ['required', 'integer', 'between:1,31'],
                 'payment_grace_days' => ['required', 'integer', 'between:1,31'],
                 'statement_balance' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'minimum_payment' => ['nullable', 'numeric', 'gte:0', 'decimal:0,2'],
                 'notes' => ['nullable', 'string', 'max:2000'],
             ];
         }
@@ -36,26 +37,26 @@ class StoreCommitmentRequest extends FormRequest
             'frequency' => [
                 'required',
                 'in:once,weekly,biweekly,monthly,quarterly,yearly',
-                ...($requiresLoanOrCardDetails ? ['not_in:once'] : []),
+                ...($requiresLoanDetails ? ['not_in:once'] : []),
             ],
             'next_due_date' => ['required', 'date'],
             'reference_number' => [
-                Rule::requiredIf($requiresLoanOrCardDetails),
+                Rule::requiredIf($requiresLoanDetails),
                 'nullable',
                 'string',
                 'max:80',
                 ...($type === 'credit_card' ? ['regex:/^\d{4}$/'] : []),
             ],
-            'institution' => [Rule::requiredIf($requiresLoanOrCardDetails), 'nullable', 'string', 'max:160'],
-            'current_balance' => [Rule::requiredIf($requiresLoanOrCardDetails), 'nullable', 'numeric', 'min:0', 'decimal:0,2'],
-            'interest_rate' => [Rule::requiredIf($requiresLoanOrCardDetails), 'nullable', 'numeric', 'min:0', 'max:100', 'decimal:0,3'],
+            'institution' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'string', 'max:160'],
+            'current_balance' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'numeric', 'min:0', 'decimal:0,2'],
+            'interest_rate' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'numeric', 'min:0', 'max:100', 'decimal:0,3'],
             'category' => [
                 Rule::requiredIf(in_array($type, ['utility', 'subscription', 'insurance'], true)),
                 'nullable',
                 'string',
                 'max:80',
             ],
-            'maturity_date' => [Rule::requiredIf($type === 'loan'), 'nullable', 'date', 'after_or_equal:next_due_date'],
+            'maturity_date' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'date', 'after_or_equal:next_due_date'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];
     }

@@ -5,13 +5,18 @@ namespace App\Actions;
 use App\Models\FinancialTransaction;
 use App\Models\CommitmentOccurrence;
 use App\Models\Commitment;
+use App\Models\Debt;
+use App\Models\DebtBalanceMovement;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\DebtBalanceLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ReversePayment
 {
+    public function __construct(private readonly DebtBalanceLedger $balanceLedger) {}
+
     public function execute(User $user, Payment $payment, array $input, RecalculateCommitmentAmortization $amortization): Payment
     {
         return DB::transaction(function () use ($user, $payment, $input, $amortization) {
@@ -32,6 +37,41 @@ class ReversePayment
                 'description' => 'Reversal: '.$input['reason'], 'amount' => bcsub('0.00', (string) $original->amount, 2),
                 'occurred_at' => now(), 'kind' => 'reversal', 'reversal_of_id' => $original->id,
             ]);
+            if ($commitment?->type === 'credit_card') {
+                $debt = Debt::query()
+                    ->where('user_id', $user->id)
+                    ->where('kind', 'credit_card')
+                    ->where('name', $commitment->name)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $paymentMovement = DebtBalanceMovement::query()
+                    ->where('payment_id', $locked->id)
+                    ->first();
+                if ($paymentMovement && (int) $paymentMovement->debt_id !== (int) $debt->id) {
+                    abort(409, 'El movimiento del pago no coincide con la deuda de la tarjeta.');
+                }
+                if (!$paymentMovement) {
+                    $this->balanceLedger->ensureOpeningBalance($debt, $debt->account_id, now());
+                }
+                $delta = $paymentMovement
+                    ? bcsub('0.00', (string) $paymentMovement->delta, 2)
+                    : (string) $locked->amount;
+
+                DebtBalanceMovement::query()->create([
+                    'user_id' => $user->id,
+                    'debt_id' => $debt->id,
+                    'reversal_of_id' => $paymentMovement?->id,
+                    'account_id' => $paymentMovement?->account_id ?? $locked->account_id,
+                    'kind' => 'reversal',
+                    'delta' => $delta,
+                    'description' => 'Reversal of credit card commitment payment',
+                    'occurred_at' => now(),
+                    'idempotency_key' => $input['idempotency_key'],
+                ]);
+                $debt->update([
+                    'outstanding_amount' => bcadd((string) $debt->outstanding_amount, $delta, 2),
+                ]);
+            }
             if ($occurrence) {
                 $remainingPaid = (string) $occurrence->payments()->whereNull('reversed_at')->sum('amount');
                 $occurrence->update([

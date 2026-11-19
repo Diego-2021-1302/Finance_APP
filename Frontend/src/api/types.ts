@@ -25,6 +25,7 @@ export interface ApiClient {
     institution?: string | null;
     current_balance?: string | null;
     statement_balance?: string | null;
+    minimum_payment?: string | null;
     statement_day?: number | null;
     payment_grace_days?: number | null;
     interest_rate?: string | null;
@@ -64,7 +65,8 @@ export interface ApiClient {
   createTransfer(input: { source_account_id: string; destination_account_id: string; amount: string; transferred_at: string; notes?: string | null; idempotency_key: string }): Promise<TransferRecord>;
   listTransactions(filters?: { from?: string; to?: string; account_id?: string; q?: string }): Promise<TransactionRecord[]>;
   listDebts(): Promise<DebtRecord[]>;
-  createDebt(input: { name: string; kind: string; outstanding_amount: string; minimum_payment: string; due_date: string | null; last_four: string | null; idempotency_key: string }): Promise<DebtRecord>;
+  createDebt(input: { name: string; kind: string; outstanding_amount: string; minimum_payment?: string | null; due_date: string | null; last_four: string | null; idempotency_key: string }): Promise<DebtRecord>;
+  updateDebtMinimumPayment(debtId: string, input: { minimum_payment: string; due_date?: string | null }): Promise<DebtRecord>;
   increaseDebt(debtId: string, input: { amount: string; description: string; occurred_at: string; idempotency_key: string }): Promise<DebtRecord>;
   recordDebtPayment(debtId: string, input: { amount: string; account_id: string | null; paid_at: string; idempotency_key: string }): Promise<{ outstanding: string }>;
   listCalendar(from: string, to: string): Promise<CalendarEvent[]>;

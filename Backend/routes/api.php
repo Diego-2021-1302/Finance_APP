@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ExpenseController;
 use App\Http\Controllers\Api\V1\TransferController;
+use App\Http\Controllers\Api\V1\BudgetReserveController;
+use App\Http\Controllers\Api\V1\StatementImportController;
+use App\Http\Controllers\Api\V1\PaymentPriorityController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -75,15 +78,28 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions.index');
     Route::get('/debts', [DebtController::class, 'index'])->name('debts.index');
     Route::post('/debts', [DebtController::class, 'store'])->name('debts.store');
+    Route::patch('/debts/{debt}/minimum-payment', [DebtController::class, 'updateMinimumPayment'])->whereNumber('debt')->name('debts.minimum-payment.update');
     Route::get('/debts/history', [DebtController::class, 'history'])->name('debts.history');
+    Route::get('/debts/{debt}/statements', [DebtController::class, 'statements'])->whereNumber('debt')->name('debts.statements');
     Route::post('/debts/{debt}/increases', [DebtController::class, 'increase'])->whereNumber('debt')->name('debts.increases.store');
     Route::post('/debts/{debt}/payments', [DebtController::class, 'payment'])->whereNumber('debt')->name('debts.payments.store');
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
+    Route::get('/calendar/summary', [CalendarController::class, 'summary'])->name('calendar.summary');
+    Route::get('/priorities', [PaymentPriorityController::class, 'index'])->name('priorities.index');
     Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
+    Route::get('/reports/projection', [ReportController::class, 'projection'])->name('reports.projection');
     Route::get('/settings', [SettingsController::class, 'show'])->name('settings.show');
     Route::patch('/settings', [SettingsController::class, 'update'])->name('settings.update');
 
     Route::get('/chat/messages', [ChatController::class, 'index'])->name('chat.index');
     Route::post('/chat/messages', [ChatController::class, 'store'])->name('chat.store');
     Route::delete('/chat/messages', [ChatController::class, 'clear'])->name('chat.clear');
+
+    Route::get('/budgets', [BudgetReserveController::class, 'indexBudgets'])->name('budgets.index');
+    Route::post('/budgets', [BudgetReserveController::class, 'storeBudget'])->name('budgets.store');
+    Route::get('/reserves', [BudgetReserveController::class, 'indexReserves'])->name('reserves.index');
+    Route::post('/reserves', [BudgetReserveController::class, 'storeReserve'])->name('reserves.store');
+    Route::get('/imports', [StatementImportController::class, 'index'])->name('imports.index');
+    Route::post('/imports', [StatementImportController::class, 'store'])->name('imports.store');
+    Route::patch('/imports/{importedTransaction}', [StatementImportController::class, 'updateStatus'])->whereNumber('importedTransaction')->name('imports.update-status');
 });

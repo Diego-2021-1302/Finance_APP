@@ -6,14 +6,24 @@ use App\Models\Account;
 use App\Models\CommitmentOccurrence;
 use App\Models\FinancialTransaction;
 use App\Models\Commitment;
+use App\Models\Debt;
+use App\Models\DebtBalanceMovement;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\CommitmentRecurrence;
+use App\Services\DebtBalanceLedger;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RecordCommitmentPayment
 {
+    public function __construct(
+        private readonly CommitmentRecurrence $recurrence,
+        private readonly DebtBalanceLedger $balanceLedger,
+    ) {}
+
     public function execute(User $user, CommitmentOccurrence $occurrence, array $input, RecalculateCommitmentAmortization $amortization): array
     {
         return DB::transaction(function () use ($user, $occurrence, $input, $amortization) {
@@ -49,11 +59,37 @@ class RecordCommitmentPayment
                 'user_id' => $user->id, 'commitment_occurrence_id' => $occurrence->id, 'account_id' => $account->id,
                 'amount' => $input['amount'], 'paid_at' => $input['paid_at'], 'idempotency_key' => $input['idempotency_key'],
             ]);
+            $paidAt = Carbon::parse($input['paid_at']);
             FinancialTransaction::query()->create([
                 'user_id' => $user->id, 'account_id' => $account->id, 'payment_id' => $payment->id,
                 'description' => $occurrence->commitment->name, 'amount' => bcsub('0.00', (string) $input['amount'], 2),
-                'occurred_at' => $input['paid_at'], 'kind' => 'commitment_payment',
+                'occurred_at' => $paidAt, 'kind' => 'commitment_payment',
             ]);
+            if ($commitment->type === 'credit_card') {
+                $debt = Debt::query()
+                    ->where('user_id', $user->id)
+                    ->where('kind', 'credit_card')
+                    ->where('name', $commitment->name)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $this->balanceLedger->ensureOpeningBalance($debt, $debt->account_id, $paidAt);
+
+                DebtBalanceMovement::query()->create([
+                    'user_id' => $user->id,
+                    'debt_id' => $debt->id,
+                    'payment_id' => $payment->id,
+                    'account_id' => $account->id,
+                    'kind' => 'payment',
+                    'delta' => bcsub('0.00', (string) $input['amount'], 2),
+                    'description' => 'Credit card commitment payment',
+                    'occurred_at' => $paidAt,
+                    'idempotency_key' => Str::uuid()->toString(),
+                ]);
+                $debt->update([
+                    'outstanding_amount' => bcsub((string) $debt->outstanding_amount, (string) $input['amount'], 2),
+                ]);
+            }
             $newRemaining = bccomp((string) $input['amount'], $remaining, 2) >= 0
                 ? '0.00'
                 : bcsub($remaining, (string) $input['amount'], 2);
@@ -68,13 +104,15 @@ class RecordCommitmentPayment
             }
             if (!$balancePaidOff && bccomp((string) $input['amount'], $remaining, 2) >= 0) {
                 $occurrence->update(['status' => 'paid']);
-                $nextDueDate = $this->nextDueDate($occurrence->due_date, $commitment->frequency);
+                $firstDueDate = CommitmentOccurrence::query()
+                    ->where('commitment_id', $commitment->id)
+                    ->orderBy('due_date')
+                    ->orderBy('id')
+                    ->value('due_date');
+                $baseDay = Carbon::parse($firstDueDate ?? $occurrence->due_date)->day;
+                $nextDueDate = $this->recurrence->nextDueDate($occurrence->due_date, $commitment->frequency, $baseDay);
                 if ($nextDueDate !== null) {
                     $commitment->update(['next_due_date' => $nextDueDate]);
-                    CommitmentOccurrence::query()->firstOrCreate(
-                        ['commitment_id' => $commitment->id, 'due_date' => $nextDueDate, 'schedule_version' => 1],
-                        ['user_id' => $user->id, 'amount_due' => $commitment->amount, 'status' => 'scheduled'],
-                    );
                 }
             }
             return ['payment' => $payment, 'remaining_due' => $newRemaining];
@@ -87,16 +125,4 @@ class RecordCommitmentPayment
         return bcsub((string) $occurrence->amount_due, (string) $paid, 2);
     }
 
-    private function nextDueDate(Carbon $dueDate, string $frequency): ?Carbon
-    {
-        $next = $dueDate->copy();
-        return match ($frequency) {
-            'weekly' => $next->addWeek(),
-            'biweekly' => $next->addWeeks(2),
-            'monthly' => $next->addMonthNoOverflow(),
-            'quarterly' => $next->addMonthsNoOverflow(3),
-            'yearly' => $next->addYearNoOverflow(),
-            default => null,
-        };
-    }
 }

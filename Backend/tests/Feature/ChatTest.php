@@ -104,6 +104,8 @@ class ChatTest extends TestCase
         $this->assertDatabaseHas('debts', [
             'user_id' => $user->id,
             'outstanding_amount' => '10000.00',
+            'minimum_payment' => '0.00',
+            'minimum_payment_confirmed' => false,
         ]);
     }
 

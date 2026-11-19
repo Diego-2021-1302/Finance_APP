@@ -19,6 +19,6 @@ Schedule::command('finance:generate-occurrences')
     ->withoutOverlapping();
 
 Schedule::command('finance:process-card-cutoffs')
-    ->daily()
+    ->dailyAt('00:05')
     ->timezone('America/Santo_Domingo')
     ->withoutOverlapping();

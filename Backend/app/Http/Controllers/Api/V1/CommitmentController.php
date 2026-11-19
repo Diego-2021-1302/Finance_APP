@@ -9,16 +9,21 @@ use App\Http\Requests\StoreCommitmentPaymentRequest;
 use App\Http\Requests\StoreCommitmentRequest;
 use App\Models\Commitment;
 use App\Models\CommitmentOccurrence;
+use App\Models\DebtBalanceMovement;
+use App\Services\DebtBalanceLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class CommitmentController extends Controller
 {
-    public function store(StoreCommitmentRequest $request): JsonResponse
+    public function store(StoreCommitmentRequest $request, DebtBalanceLedger $balanceLedger): JsonResponse
     {
         $data = $request->validated();
         $user = $request->user();
+        $minimumPayment = $data['minimum_payment'] ?? null;
+        unset($data['minimum_payment']);
 
         if (($data['type'] ?? null) === 'credit_card') {
             $data['statement_balance'] = $data['statement_balance'] ?? $data['current_balance'];
@@ -41,7 +46,7 @@ class CommitmentController extends Controller
             $data['opening_balance'] = $data['current_balance'];
         }
 
-        $commitment = DB::transaction(function () use ($user, $data) {
+        $commitment = DB::transaction(function () use ($user, $data, $minimumPayment, $balanceLedger) {
             $commitment = Commitment::query()->create($data + ['user_id' => $user->id]);
 
             CommitmentOccurrence::query()->create([
@@ -63,22 +68,54 @@ class CommitmentController extends Controller
                     ]
                 );
 
-                $minimum = (string) round(((float) $commitment->statement_balance) * 0.05, 2);
+                $debt = \App\Models\Debt::query()->firstOrNew(['user_id' => $user->id, 'name' => $commitment->name]);
+                if (!$debt->exists) {
+                    $debt->minimum_payment = '0.00';
+                    $debt->minimum_payment_confirmed = false;
+                }
+                if ($minimumPayment !== null) {
+                    $debt->minimum_payment = (string) $minimumPayment;
+                    $debt->minimum_payment_confirmed = true;
+                }
+                $debt->fill([
+                    'account_id' => $account->id,
+                    'kind' => 'credit_card',
+                    'outstanding_amount' => $commitment->current_balance,
+                    'due_date' => $commitment->next_due_date,
+                    'last_four' => $commitment->reference_number,
+                    'statement_day' => $commitment->statement_day,
+                    'payment_grace_days' => $commitment->payment_grace_days,
+                    'statement_balance' => $commitment->statement_balance,
+                ])->save();
 
-                \App\Models\Debt::query()->updateOrCreate(
-                    ['user_id' => $user->id, 'name' => $commitment->name],
-                    [
-                        'account_id' => $account->id,
-                        'kind' => 'credit_card',
-                        'outstanding_amount' => $commitment->current_balance,
-                        'minimum_payment' => $minimum,
-                        'due_date' => $commitment->next_due_date,
-                        'last_four' => $commitment->reference_number,
-                        'statement_day' => $commitment->statement_day,
-                        'payment_grace_days' => $commitment->payment_grace_days,
-                        'statement_balance' => $commitment->statement_balance,
-                    ]
+                $balanceLedger->ensureOpeningBalance(
+                    $debt,
+                    $account->id,
+                    now(),
+                    'Initial credit card balance',
                 );
+                $balanceMovements = DebtBalanceMovement::query()
+                    ->where('debt_id', $debt->id)
+                    ->orderBy('occurred_at')
+                    ->orderBy('id')
+                    ->get(['delta']);
+                $ledgerBalance = '0.00';
+                foreach ($balanceMovements as $movement) {
+                    $ledgerBalance = bcadd($ledgerBalance, (string) $movement->delta, 2);
+                }
+                $adjustment = bcsub((string) $debt->outstanding_amount, $ledgerBalance, 2);
+                if (bccomp($adjustment, '0.00', 2) !== 0) {
+                    DebtBalanceMovement::query()->create([
+                        'user_id' => $user->id,
+                        'debt_id' => $debt->id,
+                        'account_id' => $account->id,
+                        'kind' => 'adjustment',
+                        'delta' => $adjustment,
+                        'description' => 'Card balance reconciliation at setup',
+                        'occurred_at' => now(),
+                        'idempotency_key' => Str::uuid()->toString(),
+                    ]);
+                }
             }
 
             return $commitment;

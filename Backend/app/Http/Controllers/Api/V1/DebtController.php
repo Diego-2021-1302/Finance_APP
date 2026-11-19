@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\IncreaseDebtBalanceRequest;
 use App\Http\Requests\StoreDebtPaymentRequest;
 use App\Http\Requests\StoreDebtRequest;
+use App\Http\Requests\UpdateDebtMinimumPaymentRequest;
 use App\Models\Account;
 use App\Models\Commitment;
+use App\Models\CreditCardStatement;
 use App\Models\Debt;
 use App\Models\DebtBalanceMovement;
 use App\Models\User;
@@ -22,15 +24,7 @@ class DebtController extends Controller
     public function index(Request $request): JsonResponse
     {
         $items = Debt::query()->where('user_id', $request->user()->id)->with('account')->orderBy('due_date')->get()
-            ->map(fn (Debt $debt) => [
-                'id' => $debt->id,
-                'account' => $debt->name,
-                'kind' => $debt->kind,
-                'outstanding' => $debt->outstanding_amount,
-                'minimum' => $debt->minimum_payment,
-                'due_date' => $debt->due_date?->toDateString(),
-                'last_four' => $debt->last_four,
-            ]);
+            ->map(fn (Debt $debt) => $this->serialize($debt));
         return response()->json(['data' => $items]);
     }
 
@@ -56,6 +50,9 @@ class DebtController extends Controller
 
             $debtAttributes = $validated;
             unset($debtAttributes['idempotency_key']);
+            $minimumConfirmed = array_key_exists('minimum_payment', $validated) && $validated['minimum_payment'] !== null;
+            $debtAttributes['minimum_payment'] = $minimumConfirmed ? $validated['minimum_payment'] : '0.00';
+            $debtAttributes['minimum_payment_confirmed'] = $minimumConfirmed;
             $debt = Debt::query()->create($debtAttributes + ['user_id' => $user->id]);
             DebtBalanceMovement::query()->create([
                 'user_id' => $user->id,
@@ -112,6 +109,64 @@ class DebtController extends Controller
         }, 3);
 
         return response()->json(['data' => $this->serialize($updated)]);
+    }
+
+    public function updateMinimumPayment(UpdateDebtMinimumPaymentRequest $request, int $debt): JsonResponse
+    {
+        $record = DB::transaction(function () use ($request, $debt) {
+            $record = Debt::query()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($debt)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $record->update([
+                'minimum_payment' => $request->validated('minimum_payment'),
+                'minimum_payment_confirmed' => true,
+                'due_date' => $request->validated('due_date', $record->due_date?->toDateString()),
+            ]);
+            $statement = CreditCardStatement::query()
+                ->where('user_id', $request->user()->id)
+                ->where('debt_id', $record->id)
+                ->orderByDesc('statement_date')
+                ->lockForUpdate()
+                ->first();
+            if ($statement) {
+                $statement->update([
+                    'minimum_payment' => $request->validated('minimum_payment'),
+                    'minimum_payment_confirmed' => true,
+                    'minimum_payment_confirmed_at' => now(),
+                    'due_date' => $record->due_date,
+                ]);
+            }
+
+            return $record->refresh();
+        }, 3);
+
+        return response()->json(['data' => $this->serialize($record)]);
+    }
+
+    public function statements(Request $request, int $debt): JsonResponse
+    {
+        $record = Debt::query()
+            ->where('user_id', $request->user()->id)
+            ->whereKey($debt)
+            ->where('kind', 'credit_card')
+            ->firstOrFail();
+        $statements = CreditCardStatement::query()
+            ->where('user_id', $request->user()->id)
+            ->where('debt_id', $record->id)
+            ->orderByDesc('statement_date')
+            ->get()
+            ->map(fn (CreditCardStatement $statement) => [
+                'id' => $statement->id,
+                'statement_date' => $statement->statement_date->toDateString(),
+                'closing_balance' => $statement->closing_balance,
+                'minimum_payment' => $statement->minimum_payment_confirmed ? $statement->minimum_payment : null,
+                'minimum_payment_confirmed' => $statement->minimum_payment_confirmed,
+                'due_date' => $statement->due_date->toDateString(),
+            ]);
+
+        return response()->json(['data' => $statements]);
     }
 
     public function payment(StoreDebtPaymentRequest $request, int $debt, RecordDebtPayment $action): JsonResponse
@@ -196,7 +251,8 @@ class DebtController extends Controller
             'account' => $debt->name,
             'kind' => $debt->kind,
             'outstanding' => $debt->outstanding_amount,
-            'minimum' => $debt->minimum_payment,
+            'minimum' => $debt->minimum_payment_confirmed ? $debt->minimum_payment : null,
+            'minimum_confirmed' => $debt->minimum_payment_confirmed,
             'due_date' => $debt->due_date?->toDateString(),
             'last_four' => $debt->last_four,
         ];

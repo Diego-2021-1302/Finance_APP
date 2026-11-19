@@ -4,8 +4,17 @@ export interface User {
   email: string;
 }
 
+export interface BudgetRecord {
+  category: string;
+  limit: string;
+  spent: string;
+  remaining: string;
+  percentage: number;
+}
+
 export interface DashboardSummary {
-  balances: { confirmed: string; totalDebt?: string; accountCount: number };
+  balances: { real: string; confirmed: string; reserved?: string; availableUncommitted?: string; totalDebt?: string; accountCount: number };
+  budgets?: BudgetRecord[];
   income: { expected: string; received: string };
   commitments: { dueSoon: string; dueSoonLabel: string };
   upcoming: Array<{ label: string; dueDate: string; amount: string; kind: string }>;
@@ -47,7 +56,7 @@ export interface DebtRecord {
   account: string;
   kind?: string;
   outstanding: string;
-  minimum: string;
+  minimum: string | null;
   dueDate: string;
 }
 

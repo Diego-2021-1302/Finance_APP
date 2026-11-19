@@ -649,42 +649,56 @@ export const liveClient: ApiClient = {
 
   async listDebts() {
     const result = await request<{ data: Array<{
-      id: number; account: string; kind: string; outstanding: string; minimum: string; due_date: string | null;
+      id: number; account: string; kind: string; outstanding: string; minimum: string | null; minimum_confirmed: boolean; due_date: string | null;
     }> }>('/debts');
     return result.data.map((item): DebtRecord => ({
       id: String(item.id),
       account: item.account,
       kind: item.kind,
       outstanding: toMoney(item.outstanding),
-      minimum: toMoney(item.minimum),
+      minimum: item.minimum === null ? null : toMoney(item.minimum),
       dueDate: displayDate(item.due_date),
     }));
   },
 
   async createDebt(input) {
     const result = await request<Envelope<{
-      id: number; account: string; kind: string; outstanding: string; minimum: string; due_date: string | null;
+      id: number; account: string; kind: string; outstanding: string; minimum: string | null; minimum_confirmed: boolean; due_date: string | null;
     }>>('/debts', { method: 'POST', body: jsonBody(input) });
     return {
       id: String(result.data.id),
       account: result.data.account,
       kind: result.data.kind,
       outstanding: toMoney(result.data.outstanding),
-      minimum: toMoney(result.data.minimum),
+      minimum: result.data.minimum === null ? null : toMoney(result.data.minimum),
+      dueDate: displayDate(result.data.due_date),
+    };
+  },
+
+  async updateDebtMinimumPayment(debtId, input) {
+    const result = await request<Envelope<{
+      id: number; account: string; kind: string; outstanding: string; minimum: string | null; minimum_confirmed: boolean; due_date: string | null;
+    }>>(`/debts/${encodeURIComponent(debtId)}/minimum-payment`, { method: 'PATCH', body: jsonBody(input) });
+    return {
+      id: String(result.data.id),
+      account: result.data.account,
+      kind: result.data.kind,
+      outstanding: toMoney(result.data.outstanding),
+      minimum: result.data.minimum === null ? null : toMoney(result.data.minimum),
       dueDate: displayDate(result.data.due_date),
     };
   },
 
   async increaseDebt(debtId, input) {
     const result = await request<Envelope<{
-      id: number; account: string; kind: string; outstanding: string; minimum: string; due_date: string | null;
+      id: number; account: string; kind: string; outstanding: string; minimum: string | null; minimum_confirmed: boolean; due_date: string | null;
     }>>(`/debts/${encodeURIComponent(debtId)}/increases`, { method: 'POST', body: jsonBody(input) });
     return {
       id: String(result.data.id),
       account: result.data.account,
       kind: result.data.kind,
       outstanding: toMoney(result.data.outstanding),
-      minimum: toMoney(result.data.minimum),
+      minimum: result.data.minimum === null ? null : toMoney(result.data.minimum),
       dueDate: displayDate(result.data.due_date),
     };
   },
@@ -700,12 +714,12 @@ export const liveClient: ApiClient = {
   async listCalendar(from, to) {
     const params = new URLSearchParams({ from, to });
     const result = await request<{ events: Array<{
-      event: string; date: string; amount: string; type: string;
+      event: string; date: string; amount: string | null; type: string;
     }> }>(`/calendar?${params.toString()}`);
     return result.events.map((item): CalendarEvent => ({
       event: item.event,
       date: displayDate(item.date, false),
-      amount: toMoney(item.amount),
+      amount: item.amount === null ? 'Por confirmar' : toMoney(item.amount),
       type: item.type === 'income' ? 'Ingreso' : item.type === 'commitment' ? 'Compromiso' : 'Deuda',
     }));
   },

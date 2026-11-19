@@ -9,6 +9,7 @@ use App\Models\Transfer;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class TransactionService
@@ -78,7 +79,8 @@ class TransactionService
                         'name' => $account->name,
                         'kind' => 'credit_card',
                         'outstanding_amount' => $input['amount'],
-                        'minimum_payment' => (string) round(((float) $input['amount']) * 0.05, 2),
+                        'minimum_payment' => '0.00',
+                        'minimum_payment_confirmed' => false,
                     ]);
                 } else {
                     $debt->update([

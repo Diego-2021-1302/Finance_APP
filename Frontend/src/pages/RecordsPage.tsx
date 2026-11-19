@@ -347,6 +347,7 @@ function CommitmentsPage() {
         institution: String(data.get('institution') || '') || null,
         current_balance: currentBal,
         statement_balance: stmtBal,
+        minimum_payment: String(data.get('minimum_payment') || '') || null,
         statement_day: stmtDay,
         payment_grace_days: graceDays,
         notes: String(data.get('notes') || '') || null,
@@ -457,6 +458,7 @@ function CommitmentsPage() {
             <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue="15" required placeholder="ej. 15" /></Field>
             <Field label="Días para pago / Vencimiento de pago" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue="21" required placeholder="ej. 21 días" /></Field>
             <Field label="Balance al corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" placeholder="Balance del último estado de cuenta" /></Field>
+            <Field label="Pago mínimo informado por el banco (DOP)"><Input name="minimum_payment" type="number" min="0" step="0.01" placeholder="Déjalo vacío si aún no lo tienes" /></Field>
           </>}
 
           {commitmentType === 'loan' && <>

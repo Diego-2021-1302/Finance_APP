@@ -50,11 +50,12 @@ class FinanceInsightsController extends Controller
             'current_debts' => Debt::query()
                 ->where('user_id', $userId)
                 ->orderBy('due_date')
-                ->get(['kind', 'outstanding_amount', 'minimum_payment', 'due_date'])
+                ->get(['kind', 'outstanding_amount', 'minimum_payment', 'minimum_payment_confirmed', 'due_date'])
                 ->map(fn (Debt $debt) => [
                     'type' => $debt->kind,
                     'outstanding' => $debt->outstanding_amount,
-                    'minimum_payment' => $debt->minimum_payment,
+                    'minimum_payment' => $debt->minimum_payment_confirmed ? $debt->minimum_payment : null,
+                    'minimum_payment_confirmed' => $debt->minimum_payment_confirmed,
                     'due_date' => $debt->due_date?->toDateString(),
                 ])->values()->all(),
             'commitments' => Commitment::query()

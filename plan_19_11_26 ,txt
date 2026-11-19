@@ -1,0 +1,1031 @@
+# PROMPT MAESTRO — REINGENIERÍA FINANCIERA DE GHOST FINANCE
+
+## SEGUIMIENTO DE IMPLEMENTACIÓN
+
+**Actualizado:** 19 de noviembre de 2026  
+**Regla de estado:** solo se marca como realizado lo implementado y verificado. Ninguna fase completa todavía.
+
+### LISTO Y VERIFICADO
+
+#### Auditoría y correcciones de integridad
+
+- [x] Realizada auditoría focalizada de los flujos principales de saldos, pagos, recurrencias, cortes de tarjeta, dashboard y reportes.
+- [x] Corregido el uso de `Str::uuid()` sin importar `Illuminate\Support\Str`, que podía impedir registrar consumos de tarjeta.
+- [x] Corregida la variable inexistente en la validación de préstamos; ahora se exigen los detalles contractuales requeridos.
+- [x] Centralizado el cálculo de recurrencias entre el pago y el comando programado; el pago ya no crea la próxima ocurrencia.
+- [x] Preservado el día base original de las recurrencias mensuales al pasar por febrero.
+- [x] Reutilizada la misma regla de recurrencia en calendario e informe de flujo, incluyendo el día base original y los importes de ocurrencias existentes.
+
+#### Dashboard: exactitud de cifras mostradas
+
+- [x] Separado el saldo real de efectivo/cuentas del libro mayor de tarjetas de crédito, manteniendo el campo API `confirmed` por compatibilidad y agregando `real`.
+- [x] Calculado el monto restante de compromisos próximos después de pagos parciales y el total de todas las ocurrencias de los próximos siete días.
+- [x] Limitada la lista visual a cinco vencimientos sin limitar el total calculado.
+- [x] Aclarado en la interfaz que el saldo aún no descuenta reservas.
+
+#### Pago mínimo de tarjetas y deudas
+
+- [x] Eliminado el cálculo universal del 5 % en la aplicación.
+- [x] Añadida migración reversible para marcar mínimos confirmados sin borrar sus valores históricos.
+- [x] Añadido estado de confirmación sin borrar los valores históricos existentes.
+- [x] Permitido capturar el pago mínimo explícitamente desde el estado bancario.
+- [x] Excluidos los mínimos no confirmados del calendario y del pronóstico de pagos.
+- [x] Invalidado el mínimo anterior al registrar un nuevo corte y dejado el nuevo como pendiente de confirmación.
+
+#### Historial de estados de cuenta de tarjetas
+
+- [x] Registrada una captura única por tarjeta y fecha de corte con saldo, vencimiento y pago mínimo confirmado.
+- [x] Recuperados los cortes omitidos a partir de los movimientos disponibles, sin depender de ejecutar el comando en la fecha exacta.
+- [x] Conservadas las capturas existentes al reejecutar el comando y preservados los mínimos confirmados de ciclos anteriores.
+- [x] Asociados los pagos y reversiones de compromisos de tarjeta al historial de movimientos usado para calcular los cortes.
+- [x] Añadidas migraciones para guardar estados de cuenta y enlazar movimientos de pagos/reversiones.
+- [x] Añadido un endpoint autenticado y aislado por usuario para consultar el historial de estados de cuenta.
+
+> Los estados anteriores al primer movimiento disponible no se reconstruyen automáticamente; requieren extractos bancarios históricos.
+
+#### Verificación ejecutada
+
+- [x] Backend: 35 pruebas y 153 aserciones aprobadas.
+- [x] Frontend: 8 pruebas aprobadas.
+- [x] Build TypeScript/Vite completado; quedan advertencias de comentarios de `zod` en dependencias.
+- [x] Revisión de `git diff --check` sin errores.
+
+### EN CURSO — FASE 1: AUDITORÍA Y CORRECCIÓN
+
+- [x] Hacer idempotente e histórico el procesamiento de cortes de tarjeta desde el primer movimiento disponible, sin depender de ejecutar el comando exactamente el día de corte.
+- [ ] Completar la revisión de reportes, aislamiento de usuario y reversiones con pruebas focalizadas.
+
+### PENDIENTE — SIGUIENTES FASES
+
+#### Fase 2: motores financieros
+
+- [ ] Completar el motor de tarjetas con intereses contractuales, separación entre saldo facturado/no facturado y conciliación con extractos anteriores al inicio del libro mayor.
+- [ ] Motor de préstamos configurable por contrato, amortización, abonos extraordinarios y recálculo sin alterar movimientos históricos.
+- [ ] Estados completos de compromisos, importes variables y recurrencias personalizadas.
+
+#### Fase 3: planificación
+
+- [ ] Plan financiero mensual, presupuestos, reservas, prioridades de pago y proyección diaria de liquidez.
+
+#### Fase 4: automatización
+
+- [ ] Ingresos recurrentes esperados, conciliación/importación revisable, confirmación de pagos e indicadores de actualización.
+
+#### Fase 5: interfaz y reportes
+
+- [ ] Dashboard completo, agenda priorizada, reportes ampliados y experiencia móvil para los nuevos contratos financieros.
+
+#### Fase 6: asistente financiero
+
+- [ ] Conectar respuestas y simulaciones a cálculos deterministas y datos aislados por usuario; impedir cambios sensibles sin autorización explícita.
+
+---
+
+## 1. ROL Y OBJETIVO
+
+Actúa como un equipo de ingeniería de software especializado en:
+
+- Arquitectura de aplicaciones financieras.
+- Desarrollo full-stack.
+- Laravel, PHP, bases de datos y APIs REST.
+- Sistemas de contabilidad y conciliación.
+- Tarjetas de crédito, préstamos e intereses.
+- Presupuestos y planificación financiera.
+- Automatización de obligaciones recurrentes.
+- Diseño UX/UI para aplicaciones FinTech.
+- Pruebas automatizadas y seguridad financiera.
+
+Tu tarea es **analizar, corregir, ampliar e implementar mejoras directamente sobre el proyecto existente GHOST FINANCE**.
+
+NO debes crear una aplicación nueva.
+
+NO debes sustituir la arquitectura actual sin justificación técnica.
+
+NO debes eliminar funcionalidades existentes que estén funcionando correctamente.
+
+El objetivo principal es transformar GHOST FINANCE en una plataforma de administración financiera personal que permita al usuario conocer con exactitud:
+
+1. Cuánto dinero tiene realmente.
+2. Cuánto dinero tiene comprometido.
+3. Cuánto dinero puede gastar sin afectar sus obligaciones.
+4. Cuánto debe en total.
+5. Cuánto debe pagar durante el mes.
+6. Cuáles son sus próximos vencimientos.
+7. Qué obligaciones tienen mayor prioridad.
+8. Cuánto pagará en intereses.
+9. Cuánto podrá ahorrar.
+10. Si sus ingresos serán suficientes para cubrir sus próximos pagos.
+
+La aplicación debe ser cómoda, intuitiva, automatizada, confiable y fácil de mantener actualizada.
+
+---
+
+## 2. ANÁLISIS OBLIGATORIO DEL PROYECTO
+
+Antes de modificar código, inspecciona completamente el repositorio.
+
+El proyecto contiene un backend Laravel y módulos relacionados con:
+
+- Dashboard.
+- Cuentas financieras.
+- Ingresos.
+- Gastos directos.
+- Transferencias.
+- Compromisos.
+- Deudas.
+- Transacciones.
+- Calendario.
+- Reportes.
+- Configuración.
+- Asistente de IA.
+
+Revisa especialmente estos archivos existentes:
+
+- `Backend/app/Http/Controllers/Api/V1/DashboardController.php`
+- `Backend/app/Http/Controllers/Api/V1/ReportController.php`
+- `Backend/app/Actions/RecordCommitmentPayment.php`
+- `Backend/app/Actions/RecalculateCommitmentAmortization.php`
+- `Backend/app/Console/Commands/ProcessCreditCardCutoffs.php`
+- `Backend/app/Console/Commands/SendDueDateReminders.php`
+
+También inspecciona modelos, migraciones, servicios, rutas, validadores, pruebas, frontend y tareas programadas relacionadas.
+
+Identifica:
+
+- Cómo se calculan actualmente los saldos.
+- Cómo se almacenan las deudas.
+- Cómo se generan las cuotas.
+- Cómo se registran los pagos.
+- Cómo se calculan los intereses.
+- Cómo se gestionan los cortes de tarjetas.
+- Cómo se generan compromisos recurrentes.
+- Cómo se calculan los reportes.
+- Cómo se evita duplicar movimientos.
+- Cómo se revierten transacciones.
+- Cómo se ejecutan las automatizaciones.
+- Cómo se integra el asistente de IA.
+
+**No asumas que una funcionalidad está implementada correctamente por el simple hecho de que exista código para ella.**
+
+Documenta los problemas reales encontrados y distingue los errores confirmados de los riesgos potenciales.
+
+Después de analizar, comienza la implementación siguiendo las fases establecidas.
+
+---
+
+# 3. MODELO FINANCIERO CENTRAL
+
+Implementa o refactoriza un modelo financiero consistente.
+
+El sistema debe distinguir claramente:
+
+### Saldo real
+
+Dinero existente en cuentas bancarias, efectivo y billeteras.
+
+### Saldo reservado
+
+Dinero que el usuario ha destinado a obligaciones futuras, pero que todavía permanece en sus cuentas.
+
+### Dinero disponible sin comprometer
+
+Saldo real menos reservas activas.
+
+No debe confundirse con la capacidad de cubrir todas las obligaciones: el sistema también debe identificar compromisos sin fondos asignados.
+
+### Saldo proyectado
+
+Dinero estimado para una fecha futura, considerando:
+
+- Saldo inicial.
+- Ingresos previstos.
+- Pagos programados.
+- Gastos presupuestados.
+- Transferencias relevantes.
+- Reservas y sus liberaciones.
+
+No contar dos veces una misma obligación.
+
+### Deuda total
+
+Debe distinguir:
+
+- Capital pendiente.
+- Intereses devengados.
+- Cargos aplicados.
+- Saldo facturado.
+- Saldo todavía no facturado.
+- Obligaciones vencidas.
+- Pagos mínimos.
+- Cuotas futuras.
+
+No sumar todos los pagos futuros de un préstamo al capital pendiente, porque eso puede duplicar intereses proyectados.
+
+### Reglas contables obligatorias
+
+- Una transferencia entre cuentas propias no es ingreso ni gasto.
+- Recibir un préstamo aumenta efectivo y pasivos, pero no constituye ingreso ordinario.
+- Comprar con tarjeta crea una obligación y registra el consumo correspondiente.
+- Pagar una tarjeta reduce efectivo y deuda, sin duplicar el gasto original.
+- Los intereses y cargos sí pueden representar gastos financieros.
+- Una reserva no disminuye el saldo bancario.
+- Una obligación prevista no es un pago confirmado.
+- Un pago parcial debe actualizar el saldo pendiente.
+- Una reversión debe restaurar correctamente los efectos financieros.
+
+Establece identificadores únicos y relaciones explícitas entre operaciones.
+
+Utiliza transacciones de base de datos, precisión decimal adecuada para dinero e idempotencia donde corresponda.
+
+Evita utilizar números de punto flotante para cálculos monetarios críticos.
+
+---
+
+# 4. MOTOR DE TARJETAS DE CRÉDITO
+
+Implementa un motor específico para tarjetas de crédito.
+
+Cada tarjeta debe permitir configurar:
+
+- Banco emisor.
+- Nombre personalizado.
+- Moneda.
+- Límite de crédito.
+- Fecha de corte.
+- Fecha límite de pago.
+- Regla contractual de vencimiento.
+- Tasa de interés aplicable.
+- Tasas diferenciadas, si existen.
+- Condiciones del período de gracia.
+- Pago mínimo informado por el banco.
+- Comisiones y cargos.
+- Saldo inicial.
+- Estados de cuenta históricos.
+
+El sistema debe separar:
+
+1. Saldo actual total.
+2. Saldo del último estado de cuenta.
+3. Pago mínimo pendiente.
+4. Importe restante para cubrir el estado de cuenta.
+5. Consumos posteriores al corte.
+6. Intereses ya aplicados.
+7. Intereses estimados.
+8. Crédito disponible.
+
+### Fechas de corte
+
+Al llegar la fecha de corte, el sistema debe generar o registrar el estado de cuenta correspondiente.
+
+El estado debe conservar sus importes históricos, incluso cuando se registren nuevas compras.
+
+No modificar retroactivamente un corte confirmado sin un proceso explícito de ajuste.
+
+### Pago mínimo
+
+No utilizar un porcentaje fijo universal.
+
+Permitir registrar el mínimo informado por el banco y, opcionalmente, configurar reglas de cálculo cuando se conozcan las condiciones contractuales.
+
+### Intereses
+
+Implementar cálculos configurables según el contrato.
+
+Considerar:
+
+- Saldo financiado.
+- Períodos aplicables.
+- Pagos parciales.
+- Pérdida del período de gracia.
+- Avances de efectivo.
+- Tasas diferenciadas.
+- Cargos por atraso.
+- Intereses publicados por el banco.
+
+No asumir que los intereses comienzan únicamente después del vencimiento.
+
+Cuando no existan datos suficientes, mostrar una estimación identificada como tal, nunca una cifra presentada como definitiva.
+
+### Pagos
+
+Permitir:
+
+- Pago mínimo.
+- Pago parcial.
+- Pago del estado de cuenta.
+- Pago total de la tarjeta.
+- Pago extraordinario.
+- Reversión.
+- Conciliación.
+
+Aplicar el pago a los componentes correspondientes según las reglas configuradas.
+
+Evitar que el mismo pago reduzca dos veces una deuda.
+
+### Alertas
+
+Mostrar:
+
+- Próximo corte.
+- Próximo vencimiento.
+- Mínimo pendiente.
+- Saldo para cubrir el corte.
+- Riesgo de financiamiento.
+- Pago vencido.
+- Crédito disponible.
+
+---
+
+# 5. MOTOR DE PRÉSTAMOS
+
+Crear o perfeccionar un motor de amortización independiente.
+
+Cada préstamo debe permitir configurar:
+
+- Institución o acreedor.
+- Capital original.
+- Saldo actual.
+- Tasa de interés.
+- Tasa fija o variable.
+- Periodicidad.
+- Sistema de amortización.
+- Fecha de desembolso.
+- Fecha de primera cuota.
+- Duración.
+- Cuota contractual.
+- Seguros.
+- Comisiones.
+- Penalizaciones.
+- Condiciones de pagos anticipados.
+
+### Cálculos
+
+Implementar los sistemas de amortización compatibles con los contratos configurados.
+
+Distinguir:
+
+- Capital.
+- Intereses.
+- Seguros.
+- Cargos.
+- Cuota total.
+- Capital amortizado.
+- Capital pendiente.
+
+Los intereses deben calcularse según el método contractual y no mediante una fórmula genérica aplicada a todos los préstamos.
+
+### Abonos extraordinarios
+
+Permitir registrar pagos adicionales a capital.
+
+Cuando el contrato lo permita, ofrecer:
+
+- Reducir plazo.
+- Reducir cuota.
+- Mantener condiciones originales.
+
+Recalcular la amortización futura sin alterar incorrectamente los movimientos históricos.
+
+### Pagos atrasados
+
+Gestionar:
+
+- Cuotas vencidas.
+- Pagos parciales.
+- Intereses devengados.
+- Cargos por mora.
+- Pagos adelantados.
+- Reversiones.
+
+Mostrar el saldo pendiente y la fecha estimada de liquidación.
+
+---
+
+# 6. MOTOR UNIVERSAL DE COMPROMISOS
+
+Crear un sistema de obligaciones financieras que admita:
+
+- Facturas.
+- Servicios básicos.
+- Internet.
+- Telefonía.
+- Alquiler.
+- Streaming.
+- Seguros.
+- Suscripciones.
+- Cuotas.
+- Deudas personales.
+- Otros compromisos.
+
+Cada compromiso debe contener:
+
+- Nombre.
+- Categoría.
+- Importe.
+- Moneda.
+- Frecuencia.
+- Próxima fecha.
+- Fecha límite.
+- Cuenta o tarjeta asociada.
+- Estado.
+- Importe pagado.
+- Importe pendiente.
+- Reglas de recargos.
+- Renovación automática.
+- Notificaciones.
+- Historial.
+
+### Recurrencias
+
+Admitir frecuencias:
+
+- Semanal.
+- Quincenal.
+- Mensual.
+- Bimestral.
+- Trimestral.
+- Semestral.
+- Anual.
+- Personalizada.
+
+Manejar correctamente meses de diferente duración, años bisiestos y fechas como el día 31.
+
+### Importes variables
+
+Para servicios como electricidad, permitir crear la obligación sin conocer todavía el importe definitivo.
+
+El sistema debe solicitar la confirmación cuando se conozca la factura.
+
+### Estados
+
+Implementar:
+
+- Programado.
+- Pendiente de importe.
+- Pendiente de pago.
+- Pago parcial.
+- Pago reportado.
+- Pagado y confirmado.
+- Vencido.
+- Cancelado.
+- Suspendido.
+
+No marcar automáticamente como pagado un compromiso por el simple hecho de llegar su fecha.
+
+No confundir cobro automático esperado con cobro confirmado.
+
+---
+
+# 7. PLANIFICACIÓN FINANCIERA MENSUAL
+
+Implementar una sección denominada:
+
+**PLAN FINANCIERO DEL MES**
+
+Debe consolidar:
+
+- Saldo inicial.
+- Ingresos recibidos.
+- Ingresos esperados.
+- Gastos realizados.
+- Gastos presupuestados.
+- Compromisos pagados.
+- Compromisos pendientes.
+- Cuotas de préstamos.
+- Pagos de tarjetas.
+- Suscripciones.
+- Ahorro planificado.
+- Reservas.
+- Saldo final proyectado.
+
+Mostrar claramente:
+
+**TOTAL DE OBLIGACIONES DEL MES**
+
+Este importe debe representar lo exigible o planificado para el período seleccionado, sin confundirlo con la deuda total.
+
+Separar:
+
+- Total programado.
+- Total pagado.
+- Total pendiente.
+- Total vencido.
+- Total reservado.
+- Total sin cobertura.
+
+Permitir consultar meses anteriores y futuros.
+
+### Dos perspectivas
+
+Implementar:
+
+**Vista por vencimiento:** obligaciones que corresponden al mes.
+
+**Vista por flujo de caja:** ingresos y salidas que realmente ocurren durante el mes.
+
+Una factura correspondiente a octubre y pagada en noviembre debe conservar ambas referencias sin duplicar importes.
+
+---
+
+# 8. MOTOR DE PRIORIDADES DE PAGO
+
+Implementar un sistema inteligente y explicable de prioridades.
+
+Considerar:
+
+1. Fecha límite.
+2. Días restantes.
+3. Pago mínimo necesario.
+4. Consecuencias del atraso.
+5. Riesgo de intereses.
+6. Riesgo de suspensión de servicios esenciales.
+7. Fondos disponibles.
+8. Próximos ingresos.
+9. Posibilidad de pago parcial.
+10. Prioridad personalizada del usuario.
+
+El sistema debe mostrar una agenda cronológica y, adicionalmente, destacar las obligaciones críticas.
+
+No utilizar exclusivamente la fecha para determinar la prioridad.
+
+No presentar una recomendación financiera automática como una obligación incuestionable.
+
+### Resultado esperado
+
+Para cada obligación, mostrar:
+
+- Nombre.
+- Fecha límite.
+- Importe pendiente.
+- Fondos reservados.
+- Importe sin cobertura.
+- Nivel de urgencia.
+- Motivo de la prioridad.
+- Acción recomendada.
+
+Ejemplos:
+
+"Esta factura vence en dos días y todavía no tiene fondos reservados."
+
+"El pago mínimo de esta tarjeta está próximo a vencer."
+
+"Los ingresos previstos antes del vencimiento no alcanzan para cubrir todos los compromisos."
+
+---
+
+# 9. PROYECCIÓN DE LIQUIDEZ
+
+Implementar un calendario de flujo de efectivo.
+
+Debe proyectar el saldo por día o por evento financiero.
+
+Considerar:
+
+- Saldos confirmados.
+- Ingresos esperados.
+- Obligaciones programadas.
+- Gastos esenciales presupuestados.
+- Reservas.
+- Fechas de cobro.
+- Fechas de vencimiento.
+
+Detectar posibles déficits antes de que ocurran.
+
+No basta con que los ingresos mensuales superen los gastos: el sistema debe verificar si el dinero estará disponible en las fechas necesarias.
+
+Distinguir proyecciones confirmadas de escenarios estimados.
+
+Permitir simular cambios de fecha, ingresos extraordinarios o pagos anticipados.
+
+---
+
+# 10. PRESUPUESTOS Y CONTROL DE GASTOS
+
+Implementar presupuestos:
+
+- Mensuales.
+- Quincenales.
+- Semanales.
+- Personalizados.
+
+Permitir presupuestos por categoría.
+
+Ejemplos:
+
+- Alimentación.
+- Transporte.
+- Servicios.
+- Entretenimiento.
+- Compras.
+- Gastos personales.
+- Ahorro.
+
+Mostrar:
+
+- Presupuesto asignado.
+- Gasto realizado.
+- Importe restante.
+- Porcentaje utilizado.
+- Proyección hasta el final del período.
+
+Alertar cuando el usuario se aproxime a su límite.
+
+No tratar el presupuesto como una prohibición de gasto, sino como una herramienta de planificación.
+
+### Fondos reservados
+
+Permitir separar virtualmente dinero para obligaciones futuras.
+
+Una reserva debe estar asociada a una obligación o meta.
+
+Evitar reservas duplicadas o superiores al saldo realmente asignable sin advertirlo.
+
+---
+
+# 11. ACTUALIZACIÓN Y CONCILIACIÓN
+
+Este módulo es fundamental.
+
+La aplicación debe reducir al mínimo el esfuerzo manual necesario para mantener los datos actualizados.
+
+### Ingresos recurrentes
+
+Registrar una sola vez:
+
+- Importe.
+- Frecuencia.
+- Fecha.
+- Cuenta de destino.
+
+Generar ingresos esperados.
+
+No sumarlos al saldo real hasta su confirmación.
+
+### Gastos
+
+Crear un registro rápido con:
+
+- Importe.
+- Cuenta.
+- Categoría.
+- Fecha.
+- Descripción opcional.
+
+Sugerir valores basados en operaciones anteriores.
+
+### Movimientos importados
+
+Preparar una arquitectura para importar movimientos desde formatos bancarios compatibles, como CSV, cuando corresponda.
+
+Permitir revisar y confirmar coincidencias.
+
+No registrar automáticamente movimientos duplicados.
+
+### Conciliación
+
+Implementar una bandeja de:
+
+**MOVIMIENTOS PENDIENTES DE REVISIÓN**
+
+Permitir:
+
+- Confirmar.
+- Corregir.
+- Clasificar.
+- Asociar a una obligación.
+- Marcar como duplicado.
+- Descartar.
+
+### Indicador de actualización
+
+Mostrar:
+
+- Última conciliación de cada cuenta.
+- Último corte confirmado.
+- Préstamos pendientes de actualización.
+- Facturas sin importe confirmado.
+- Movimientos pendientes de revisión.
+
+El sistema nunca debe presentar información incompleta como si fuera completamente exacta.
+
+---
+
+# 12. NUEVO DASHBOARD
+
+Mantener la identidad visual de GHOST FINANCE:
+
+- Tema oscuro.
+- Azul como color principal.
+- Diseño moderno.
+- Tarjetas limpias.
+- Navegación lateral.
+- Compatibilidad móvil.
+
+Reorganizar el tablero para mostrar:
+
+### Resumen superior
+
+1. Saldo real.
+2. Dinero reservado.
+3. Disponible sin comprometer.
+4. Deuda total.
+5. Obligaciones pendientes del mes.
+6. Próximos ingresos.
+
+### Panel de prioridades
+
+Mostrar los pagos urgentes con:
+
+- Fecha.
+- Importe.
+- Estado.
+- Nivel de prioridad.
+- Fondos disponibles.
+- Acceso al registro de pago.
+
+### Panel mensual
+
+Mostrar:
+
+- Ingresos.
+- Gastos.
+- Pagos de deudas.
+- Ahorro.
+- Saldo proyectado.
+
+### Panel de deudas
+
+Mostrar deuda por:
+
+- Tarjeta.
+- Préstamo.
+- Deuda personal.
+- Otros productos.
+
+Incluir evolución mensual.
+
+### Panel de alertas
+
+Mostrar únicamente avisos útiles y accionables.
+
+### Panel de actualización
+
+Indicar qué información necesita confirmación.
+
+Evitar saturar al usuario con demasiados indicadores.
+
+Priorizar claridad, jerarquía visual y facilidad de uso.
+
+---
+
+# 13. REPORTES FINANCIEROS
+
+Mejorar los reportes para incluir:
+
+- Flujo de caja.
+- Gastos por categoría.
+- Ingresos por fuente.
+- Evolución de deuda.
+- Capital amortizado.
+- Intereses pagados.
+- Compromisos mensuales.
+- Pagos atrasados.
+- Ahorro.
+- Presupuesto frente a gasto real.
+- Evolución patrimonial.
+
+Permitir filtros por:
+
+- Fecha.
+- Mes.
+- Año.
+- Cuenta.
+- Categoría.
+- Producto financiero.
+
+Distinguir deuda pendiente de pagos futuros y evitar doble contabilización.
+
+---
+
+# 14. ASISTENTE DE IA
+
+El asistente de GHOST FINANCE debe trabajar con información calculada por el backend.
+
+Puede responder preguntas como:
+
+- ¿Cuánto puedo gastar esta semana?
+- ¿Qué pagos tengo pendientes?
+- ¿Cuánto debo pagar este mes?
+- ¿Qué tarjeta vence primero?
+- ¿Mis ingresos alcanzan?
+- ¿Cuánto pagué en intereses?
+- ¿Qué categorías consumen más dinero?
+- ¿Qué pasa si abono más a mi préstamo?
+- ¿Qué pagos todavía no tienen fondos reservados?
+
+La IA debe explicar los datos, no inventarlos.
+
+Los cálculos monetarios, intereses y vencimientos deben provenir de motores deterministas.
+
+El asistente debe respetar los permisos del usuario y no recibir información financiera de otras cuentas.
+
+No ejecutar pagos ni modificar datos sensibles sin autorización explícita.
+
+---
+
+# 15. SEGURIDAD E INTEGRIDAD
+
+Implementar o verificar:
+
+- Autenticación.
+- Autorización por usuario.
+- Aislamiento de datos.
+- Validación de entradas.
+- Protección de credenciales.
+- Auditoría de modificaciones.
+- Integridad referencial.
+- Transacciones atómicas.
+- Idempotencia.
+- Reversiones seguras.
+- Manejo de errores.
+- Respaldos.
+- Protección de información financiera.
+
+No almacenar contraseñas bancarias.
+
+No introducir integraciones bancarias ficticias.
+
+No eliminar información financiera histórica durante migraciones.
+
+---
+
+# 16. PRUEBAS OBLIGATORIAS
+
+Crear pruebas automatizadas para:
+
+1. Registrar ingresos.
+2. Registrar gastos.
+3. Transferir dinero entre cuentas.
+4. Comprar con tarjeta.
+5. Generar un corte.
+6. Registrar pago mínimo.
+7. Registrar pago parcial.
+8. Pagar un estado de cuenta.
+9. Calcular intereses.
+10. Registrar un préstamo.
+11. Generar amortización.
+12. Registrar una cuota.
+13. Abonar capital extraordinario.
+14. Recalcular cuotas futuras.
+15. Generar compromisos recurrentes.
+16. Manejar meses cortos.
+17. Detectar pagos vencidos.
+18. Registrar cobros automáticos confirmados.
+19. Revertir pagos.
+20. Evitar duplicaciones.
+21. Calcular presupuestos.
+22. Calcular reservas.
+23. Proyectar liquidez.
+24. Generar reportes mensuales.
+25. Mantener aislamiento entre usuarios.
+
+Incluir casos límite y pruebas de regresión.
+
+No afirmar que las pruebas pasaron si no fueron ejecutadas.
+
+---
+
+# 17. PLAN DE IMPLEMENTACIÓN
+
+Trabaja en este orden:
+
+## Fase 1 — Auditoría y corrección
+
+- Analizar arquitectura.
+- Identificar inconsistencias.
+- Corregir cálculos existentes.
+- Eliminar duplicaciones lógicas.
+- Fortalecer pruebas.
+
+## Fase 2 — Motores financieros
+
+- Tarjetas.
+- Préstamos.
+- Compromisos.
+- Recurrencias.
+- Pagos.
+- Intereses.
+
+## Fase 3 — Planificación
+
+- Plan financiero mensual.
+- Presupuestos.
+- Reservas.
+- Prioridades.
+- Proyecciones.
+
+## Fase 4 — Automatización
+
+- Ingresos recurrentes.
+- Conciliación.
+- Confirmación de pagos.
+- Recordatorios.
+- Detección de información pendiente.
+
+## Fase 5 — Interfaz y reportes
+
+- Nuevo dashboard.
+- Calendario.
+- Reportes.
+- Visualizaciones.
+- Experiencia móvil.
+
+## Fase 6 — Asistente financiero
+
+- Consultas.
+- Explicaciones.
+- Simulaciones.
+- Recomendaciones basadas en datos.
+
+---
+
+# 18. REGLAS ESTRICTAS DE IMPLEMENTACIÓN
+
+Debes cumplir las siguientes condiciones:
+
+1. Trabaja directamente sobre el repositorio actual.
+2. Conserva el stack tecnológico existente salvo necesidad justificada.
+3. Reutiliza componentes y servicios cuando sea apropiado.
+4. No elimines funcionalidades sin reemplazarlas correctamente.
+5. No rompas rutas ni contratos API existentes sin estrategia de compatibilidad.
+6. No destruyas información histórica.
+7. Crea migraciones reversibles cuando sea posible.
+8. Implementa cambios pequeños y verificables.
+9. Evita lógica financiera duplicada.
+10. Centraliza las reglas de cálculo.
+11. Mantén backend y frontend sincronizados.
+12. No utilices datos ficticios como resultados financieros reales.
+13. No codifiques porcentajes bancarios como reglas universales.
+14. No asumas que todos los préstamos funcionan igual.
+15. No asumas que todos los meses tienen 30 días.
+16. No confundas ingresos previstos con ingresos recibidos.
+17. No confundas pagos programados con pagos realizados.
+18. No dupliques gastos cuando se paga una tarjeta.
+19. No sumes dos veces las obligaciones asociadas a una misma deuda.
+20. No afirmes que una función está terminada sin verificarla.
+
+Si alguna condición financiera depende del contrato bancario, hazla configurable.
+
+Si faltan datos para un cálculo exacto, solicita confirmación o muestra una estimación claramente identificada.
+
+---
+
+# 19. RESULTADOS QUE DEBES ENTREGAR
+
+Por cada fase, entrega:
+
+- Problemas identificados.
+- Archivos modificados.
+- Migraciones creadas.
+- Funcionalidades implementadas.
+- Cálculos corregidos.
+- Pruebas realizadas.
+- Resultados de las pruebas.
+- Riesgos pendientes.
+- Instrucciones de configuración, si son necesarias.
+
+No entregues solamente documentación, recomendaciones o pseudocódigo.
+
+**Debes implementar los cambios reales en el proyecto.**
+
+Si el entorno no permite ejecutar una prueba o realizar una migración, indícalo claramente y proporciona los pasos necesarios para verificarla.
+
+Mantén un registro de progreso para poder continuar el trabajo sin repetir fases completadas.
+
+---
+
+# 20. CRITERIO FINAL DE ÉXITO
+
+GHOST FINANCE debe convertirse en una aplicación donde el usuario pueda:
+
+- Registrar sus cuentas una sola vez.
+- Configurar sus ingresos recurrentes.
+- Registrar sus tarjetas y préstamos.
+- Configurar facturas y suscripciones.
+- Consultar sus próximos pagos.
+- Saber cuánto dinero debe reservar.
+- Saber cuánto puede gastar.
+- Consultar su deuda total.
+- Ver cuánto debe pagar durante cada mes.
+- Recibir alertas antes de los vencimientos.
+- Registrar y confirmar pagos fácilmente.
+- Conocer los intereses y cargos aplicados.
+- Simular pagos extraordinarios.
+- Ver si sus próximos ingresos alcanzarán.
+- Mantener sus datos actualizados con el menor esfuerzo posible.
+
+El sistema debe priorizar la exactitud financiera, la facilidad de uso y la prevención de atrasos.
+
+**OBJETIVO DEFINITIVO: GHOST FINANCE NO DEBE SER SIMPLEMENTE UNA APLICACIÓN PARA REGISTRAR DINERO. DEBE SER UN CENTRO DE CONTROL FINANCIERO PERSONAL QUE AYUDE AL USUARIO A ORGANIZAR SUS OBLIGACIONES, ANTICIPAR PROBLEMAS DE LIQUIDEZ Y TOMAR DECISIONES INFORMADAS.**
+
+Comienza inspeccionando el proyecto existente, presenta brevemente los hallazgos técnicos y ejecuta la Fase 1. Continúa con las siguientes fases en orden, verificando cada una antes de avanzar. No reemplaces el proyecto por una implementación nueva.

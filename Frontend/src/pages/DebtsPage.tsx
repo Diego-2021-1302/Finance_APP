@@ -36,6 +36,12 @@ export function DebtBalancesSection() {
     onError: (cause) => setError(cause.message),
   });
 
+  const updateMinimum = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: { minimum_payment: string } }) => api.updateDebtMinimumPayment(id, input),
+    onSuccess: invalidateDebtData,
+    onError: (cause) => setError(cause.message),
+  });
+
   function submitIncrease(event: FormEvent<HTMLFormElement>, debt: DebtRecord) {
     event.preventDefault();
     setError('');
@@ -75,6 +81,17 @@ export function DebtBalancesSection() {
     }, { onSuccess: () => form.reset() });
   }
 
+  function submitMinimum(event: FormEvent<HTMLFormElement>, debt: DebtRecord) {
+    event.preventDefault();
+    setError('');
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    updateMinimum.mutate({
+      id: debt.id!,
+      input: { minimum_payment: String(data.get('minimum_payment')) },
+    });
+  }
+
   if (debts.isPending || accounts.isPending) return <LoadingState />;
   if (debts.isError) return <ErrorState onRetry={() => void debts.refetch()} />;
   if (accounts.isError) return <ErrorState onRetry={() => void accounts.refetch()} />;
@@ -99,9 +116,25 @@ export function DebtBalancesSection() {
             </div>
             <div>
               <strong>{debt.outstanding}</strong>
-              <Caption1>Pendiente · pago mínimo {debt.minimum}</Caption1>
+              <Caption1>Pendiente · mínimo {debt.minimum ?? 'no confirmado'}</Caption1>
             </div>
           </div>
+          <details className="debt-action">
+            <summary>Registrar pago mínimo del estado bancario</summary>
+            <form className="debt-action-form" onSubmit={(event) => submitMinimum(event, debt)}>
+              <Field label="Pago mínimo informado por el acreedor (DOP)" required>
+                <Input
+                  name="minimum_payment"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={debt.minimum?.replace(/[^\d.]/g, '') ?? ''}
+                  required
+                />
+              </Field>
+              <Button type="submit" appearance="primary" disabled={updateMinimum.isPending}>Guardar mínimo informado</Button>
+            </form>
+          </details>
           <details className="debt-action">
             <summary>Abonar a la tarjeta / saldo</summary>
             <form className="debt-action-form" onSubmit={(event) => submitPayment(event, debt)}>

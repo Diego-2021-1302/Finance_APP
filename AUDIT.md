@@ -21,6 +21,8 @@ Se ha realizado una inspección exhaustiva de todo el repositorio (Backend Larav
 
 ## 2. CLASIFICACIÓN DE COMPONENTES EXISTENTES
 
+La siguiente tabla conserva el diagnóstico de la auditoría inicial; el estado posterior a las correcciones se documenta en la sección 4.
+
 | Componente | Ruta / Archivo | Clasificación | Diagnóstico y Acciones Requeridas |
 | :--- | :--- | :--- | :--- |
 | **AccountController** | `Backend/app/Http/Controllers/Api/V1/AccountController.php` | *Funcional, pero mejorable* | Soporta apertura y listado con saldo acumulado, pero no permite archivar cuentas ni conciliar saldos mediante ajustes explícitos auditables. |
@@ -45,5 +47,27 @@ Se ha realizado una inspección exhaustiva de todo el repositorio (Backend Larav
 2. **Fuente Única de Verdad (Cuentas Financieras)**: El saldo de cualquier cuenta se calculará como:  
    $$\text{Saldo Actual} = \text{Saldo Inicial} + \sum \text{Entradas Confirmadas} - \sum \text{Salidas Confirmadas}$$
 3. **Atomicidad Contable**: Transferencias, pagos y cobros utilizarán `DB::transaction()` con bloqueos de fila (`lockForUpdate()`) e idempotencia estricta por `idempotency_key`.
+
+## 4. VERIFICACIÓN DE FASE 1 — 19 DE NOVIEMBRE DE 2026
+
+Se contrastaron los hallazgos anteriores con el código vigente. El informe original no describe completamente el estado actual y debe leerse junto con esta verificación.
+
+### Problemas confirmados y corregidos
+
+- `TransactionService` llamaba `Str::uuid()` sin importar `Illuminate\Support\Str`; las compras con tarjeta podían fallar al crear el movimiento de deuda. Se agregó la importación y una prueba de regresión.
+- `StoreCommitmentRequest` usaba `$requiresLoanOrCardDetails`, variable inexistente, en lugar de `$requiresLoanDetails`. Los detalles contractuales de préstamos no quedaban exigidos. Se corrigió y se agregó una prueba de validación.
+- El cálculo de recurrencias ahora es compartido por pago, comando programado, calendario e informe de flujo. Se conserva el día base original (31 de enero → 28 de febrero → 31 de marzo), y el pronóstico usa el importe de la ocurrencia existente cuando difiere del valor actual del compromiso.
+- El dashboard mezclaba movimientos de tarjetas con efectivo y sumaba el importe completo de ocurrencias parcialmente pagadas. Ahora excluye cuentas de tarjeta del saldo real, expone `balances.real` conservando `balances.confirmed` por compatibilidad y calcula el importe pendiente de todas las ocurrencias de los próximos siete días. La interfaz aclara que no descuenta reservas.
+- Se eliminó el mínimo universal del 5 %. La migración `2026_11_19_000001_add_minimum_payment_confirmation_to_debts.php` agrega `minimum_payment_confirmed`; conserva los valores históricos, pero los deja sin confirmar por seguridad. El usuario puede registrar el mínimo del estado bancario, y el asistente no lo inventa. Calendario e informe de flujo solo contabilizan montos confirmados.
+- Los cortes ahora se procesan después de cerrar el día, recuperan todos los ciclos omitidos desde el primer movimiento disponible y guardan una captura única por tarjeta y fecha. El saldo se obtiene del libro de movimientos; pagos de compromisos y reversiones de tarjeta también se registran en él. Los mínimos informados se asocian al corte correspondiente y quedan disponibles mediante un endpoint de historial aislado por usuario.
+
+### Problemas confirmados pendientes
+
+- No se pueden reconstruir estados de cuenta anteriores al primer movimiento disponible del libro mayor; requerirían extractos bancarios históricos. El procesamiento conserva y genera historia a partir de ese punto.
+- El dashboard todavía no dispone de un modelo de reservas ni de una proyección completa; por eso el saldo real mostrado no debe interpretarse como dinero disponible sin comprometer.
+- Los préstamos y deudas creados en módulos separados aún no tienen una única fuente de verdad ni un motor contractual de amortización.
+- `config/cors.php` permite cualquier origen y método. Las rutas privadas siguen requiriendo autenticación, pero en producción conviene limitar los orígenes al frontend autorizado; `supports_credentials` está desactivado.
+
+Estos pendientes requieren cambios de modelo y contratos API; no se deben resolver con valores financieros supuestos. La suite completa pasó: 35 pruebas y 153 aserciones de backend, además de 8 pruebas de frontend y un build exitoso.
 
 ---

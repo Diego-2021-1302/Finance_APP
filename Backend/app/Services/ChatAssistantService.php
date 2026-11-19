@@ -249,7 +249,6 @@ class ChatAssistantService
         if ($type === 'create_debt') {
             if (empty($data['name'])) $data['name'] = 'Préstamo / Deuda';
             if (empty($data['kind'])) $data['kind'] = 'loan';
-            if (empty($data['minimum_payment'])) $data['minimum_payment'] = (string) round(((float) ($data['outstanding_amount'] ?? 0)) * 0.05, 2);
         }
 
         // Generate options for missing fields or confirmation
@@ -437,7 +436,9 @@ ACCIONES CRUD DISPONIBLES:
 - "create_income_and_receipt": { "source": string, "amount": float, "account_id": int/string, "date": "YYYY-MM-DD" }
 - "record_expense": { "description": string, "amount": float, "account_id": int/string, "date": "YYYY-MM-DD" }
 - "create_commitment": { "name": string, "type": string, "amount": float, "frequency": "monthly", "next_due_date": "YYYY-MM-DD" }
-- "create_debt": { "name": string, "kind": string, "outstanding_amount": float, "minimum_payment": float }
+- "create_debt": { "name": string, "kind": string, "outstanding_amount": number, "minimum_payment": number|null }
+
+No inventes ni estimes el pago mínimo. Si no fue informado, utiliza null.
 
 FORMATO DE RESPUESTA JSON OBLIGATORIO:
 {
@@ -535,7 +536,6 @@ PROMPT;
                         'name' => 'Préstamo / Deuda ' . $bankName,
                         'kind' => 'loan',
                         'outstanding_amount' => (string) $amount,
-                        'minimum_payment' => (string) round($amount * 0.05, 2),
                     ],
                 ]],
             ];
@@ -832,7 +832,6 @@ PROMPT;
                 $name = $data['name'] ?? 'Deuda';
                 $kind = $data['kind'] ?? 'loan';
                 $outstanding = (string) ($data['outstanding_amount'] ?? '0.00');
-                $minimum = (string) ($data['minimum_payment'] ?? '0.00');
 
                 if ((float) $outstanding <= 0) return null;
 
@@ -841,7 +840,8 @@ PROMPT;
                     'name' => $name,
                     'kind' => $kind,
                     'outstanding_amount' => $outstanding,
-                    'minimum_payment' => $minimum,
+                    'minimum_payment' => '0.00',
+                    'minimum_payment_confirmed' => false,
                 ]);
 
                 return [

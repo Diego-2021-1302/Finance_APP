@@ -17,7 +17,7 @@ class StoreDebtRequest extends FormRequest
             'name' => ['required', 'string', 'max:160'],
             'kind' => ['required', 'in:loan,credit_card,other'],
             'outstanding_amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
-            'minimum_payment' => ['required', 'numeric', 'gte:0', 'decimal:0,2'],
+            'minimum_payment' => ['sometimes', 'nullable', 'numeric', 'gte:0', 'decimal:0,2'],
             'due_date' => ['nullable', 'date'],
             'account_id' => ['nullable', 'integer', 'min:1'],
             'last_four' => ['nullable', 'digits:4'],

@@ -41,3 +41,6 @@
 {"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"Cloudflare API","target":"api.cloudflare.com:443","status":"pass","details":"API is reachable","time":"2026-11-19T14:25:56Z","message":"precheck"}
 {"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","hard_fail":false,"suggested_protocol":"quic","time":"2026-11-19T14:25:56Z","message":"precheck complete"}
 {"level":"info","event":0,"connection":"db08585a-ae11-49b2-8cf3-a3f9d9822458","connIndex":0,"location":"mia08","ip":"2606:4700:a8::6","protocol":"quic","time":"2026-11-19T14:25:56Z","message":"Registered tunnel connection"}
+{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T14:31:54Z"}
+{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T14:31:54Z","message":"Request failed"}
+{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T15:56:02Z","message":"Failed to refresh DNS local resolver"}
