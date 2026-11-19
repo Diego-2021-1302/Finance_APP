@@ -18,11 +18,7 @@ export default async function handler(req, res) {
   // 1. Try REST API if configured
   if (restUrl && restToken) {
     try {
-      const keys = [
-        'finance_app_tunnel_url',
-        'laravel_database_finance_app_tunnel_url',
-        'laravel_database_laravel_cache_finance_app_tunnel_url',
-      ];
+      const keys = ['finance_app_tunnel_url', 'laravel_database_finance_app_tunnel_url'];
       for (const k of keys) {
         const response = await fetch(`${restUrl.replace(/\/+$/, '')}/get/${k}`, {
           headers: { Authorization: `Bearer ${restToken}` },
@@ -51,11 +47,7 @@ export default async function handler(req, res) {
       });
 
       await client.connect();
-      const keys = [
-        'finance_app_tunnel_url',
-        'laravel_database_finance_app_tunnel_url',
-        'laravel_database_laravel_cache_finance_app_tunnel_url',
-      ];
+      const keys = ['finance_app_tunnel_url', 'laravel_database_finance_app_tunnel_url'];
       for (const key of keys) {
         const val = await client.get(key);
         if (val) {

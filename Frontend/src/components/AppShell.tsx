@@ -7,7 +7,7 @@ import {
   DataBarVerticalRegular, SettingsRegular, SearchRegular, AlertRegular,
   WalletRegular, NavigationRegular, DismissRegular, ChatRegular,
 } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -32,6 +32,17 @@ export function AppShell() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
 
   const pageTitle = navItems.find((item) => item.to === location.pathname)?.label ?? 'Espacio de trabajo financiero';
 

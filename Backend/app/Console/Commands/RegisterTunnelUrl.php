@@ -69,10 +69,11 @@ class RegisterTunnelUrl extends Command
 
         $this->info('[PASO 2] Guardando URL en la base de datos Redis...');
         try {
-            // Overwrite all key variations in Redis so old expired URLs are purged
-            \Illuminate\Support\Facades\Redis::connection('default')->set('finance_app_tunnel_url', $url);
-            \Illuminate\Support\Facades\Redis::connection('default')->set('laravel_database_finance_app_tunnel_url', $url);
-            \Illuminate\Support\Facades\Redis::connection('default')->set('laravel_database_laravel_cache_finance_app_tunnel_url', 's:'.strlen($url).':"'.$url.'";');
+            $redis = \Illuminate\Support\Facades\Redis::connection('default');
+            $redis->del('laravel_database_laravel_cache_finance_app_tunnel_url');
+            $redis->set('finance_app_tunnel_url', $url);
+            $redis->set('laravel_database_finance_app_tunnel_url', $url);
+            $redis->set('finance_app_tunnel_updated_at', $updatedAt);
 
             Cache::store('redis')->put('finance_app_tunnel_url', $url, now()->addDays(30));
             Cache::store('redis')->put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
@@ -80,7 +81,7 @@ class RegisterTunnelUrl extends Command
         } catch (\Throwable $e) {
             $this->warn('  -> Redis local no respondio. Guardando en cache de respaldo...');
             Cache::put('finance_app_tunnel_url', $url, now()->addDays(30));
-            Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
+        }   Cache::put('finance_app_tunnel_updated_at', $updatedAt, now()->addDays(30));
         }
 
         // Upstash / Vercel KV Redis REST sync if an explicit HTTP REST endpoint is configured

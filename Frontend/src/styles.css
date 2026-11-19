@@ -176,6 +176,7 @@ input::placeholder {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease;
+  overscroll-behavior: contain;
 }
 
 .sidebar.collapsed {
