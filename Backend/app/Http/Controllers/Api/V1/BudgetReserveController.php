@@ -52,6 +52,36 @@ class BudgetReserveController extends Controller
         return response()->json(['data' => $reserves]);
     }
 
+    public function updateReserve(Request $request, int $reserve): JsonResponse
+    {
+        $validated = $request->validate([
+            'current_amount' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $record = Reserve::query()
+            ->where('user_id', $request->user()->id)
+            ->whereKey($reserve)
+            ->firstOrFail();
+
+        $record->update([
+            'current_amount' => $validated['current_amount'],
+        ]);
+
+        return response()->json(['data' => $record->refresh()]);
+    }
+
+    public function destroyReserve(Request $request, int $reserve): JsonResponse
+    {
+        $record = Reserve::query()
+            ->where('user_id', $request->user()->id)
+            ->whereKey($reserve)
+            ->firstOrFail();
+
+        $record->delete();
+
+        return response()->json(['data' => ['deleted' => true]]);
+    }
+
     public function storeReserve(Request $request): JsonResponse
     {
         $validated = $request->validate([

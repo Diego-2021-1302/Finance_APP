@@ -27,6 +27,39 @@ class DashboardController extends Controller
             ->whereHas('account', fn ($query) => $query->where('type', '!=', 'credit_card'))
             ->sum('amount') ?: '0.00');
         $totalDebt = (string) (\App\Models\Debt::query()->where('user_id', $user->id)->sum('outstanding_amount') ?: '0.00');
+        $cards = \App\Models\Debt::query()
+            ->where('user_id', $user->id)
+            ->where('kind', 'credit_card')
+            ->orderBy('name')
+            ->get()
+            ->map(function (\App\Models\Debt $debt) use ($money) {
+                $engine = app(\App\Services\CreditCardAuthorizationEngine::class);
+                $metrics = $engine->getCapacityMetrics($debt);
+                return [
+                    'id' => $debt->id,
+                    'name' => $debt->name,
+                    'balance' => $money->dop((string) $debt->outstanding_amount),
+                    'approved_credit_limit' => $money->dop($metrics['approved_credit_limit']),
+                    'authorized_overdraft_limit' => $money->dop($metrics['authorized_overdraft_limit']),
+                    'remaining_total_capacity' => $money->dop($metrics['remaining_total_capacity']),
+                    'remaining_overdraft' => $money->dop($metrics['remaining_overdraft']),
+                    'limit_status' => $debt->limit_status ?? 'unknown',
+                    'classification' => 'confirmed',
+                ];
+            })
+            ->values();
+        $debtBreakdown = \App\Models\Debt::query()
+            ->where('user_id', $user->id)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (\App\Models\Debt $debt) => [
+                'id' => $debt->id,
+                'name' => $debt->name,
+                'kind' => $debt->kind,
+                'outstanding' => $money->dop((string) $debt->outstanding_amount),
+                'classification' => 'confirmed',
+            ])
+            ->values();
         $startOfMonth = now()->startOfMonth();
         $endOfMonth = now()->endOfMonth();
 
@@ -103,6 +136,20 @@ class DashboardController extends Controller
                     ->where('user_id', $user->id)
                     ->where('type', '!=', 'credit_card')
                     ->count(),
+                'cards' => $cards,
+                'debtBreakdown' => $debtBreakdown,
+                'reservesBreakdown' => Reserve::query()
+                    ->where('user_id', $user->id)
+                    ->orderBy('name')
+                    ->get()
+                    ->map(fn (Reserve $reserve) => [
+                        'id' => $reserve->id,
+                        'name' => $reserve->name,
+                        'currentAmount' => $money->dop((string) $reserve->current_amount),
+                        'targetAmount' => $money->dop((string) $reserve->target_amount),
+                        'classification' => 'confirmed',
+                    ])
+                    ->values(),
             ],
             'budgets' => $budgets,
             'income' => [

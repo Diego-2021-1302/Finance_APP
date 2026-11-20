@@ -1,6 +1,9 @@
 import type {
   AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, ExpenseRecord, FinanceInsights,
   IncomeRecord, Preferences, TransactionRecord, TransferRecord, User, ChatMessageItem,
+  Budget, Reserve, ImportedTransaction,
+  CatalogInstitution, CatalogCategory, CatalogProduct, CatalogProductVariant,
+  PiggyBankData,
 } from '../types';
 
 export interface ApiClient {
@@ -34,6 +37,14 @@ export interface ApiClient {
     category?: string | null;
     maturity_date?: string | null;
     notes?: string | null;
+    approved_credit_limit?: string | null;
+    authorized_overdraft_limit?: string | null;
+    limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+    special_rules_documented?: boolean;
+    special_rules_source?: string | null;
+    special_rules_reference?: string | null;
+    financial_institution_id?: number;
+    financial_product_variant_id?: number;
   }): Promise<CommitmentRecord>;
   updateCommitment(commitmentId: string, input: {
     name: string;
@@ -51,6 +62,14 @@ export interface ApiClient {
     category?: string | null;
     maturity_date?: string | null;
     notes?: string | null;
+    approved_credit_limit?: string | null;
+    authorized_overdraft_limit?: string | null;
+    limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+    special_rules_documented?: boolean;
+    special_rules_source?: string | null;
+    special_rules_reference?: string | null;
+    financial_institution_id?: number;
+    financial_product_variant_id?: number;
   }): Promise<CommitmentRecord>;
   deleteCommitment(commitmentId: string): Promise<{ id: string; deleted: boolean }>;
   recordCommitmentPayment(commitmentId: string, occurrenceId: string, input: { amount: string; account_id: string; paid_at: string; idempotency_key: string }): Promise<{ amount: string; remaining_due: string }>;
@@ -73,6 +92,28 @@ export interface ApiClient {
   updateDebtMinimumPayment(debtId: string, input: { minimum_payment: string; due_date?: string | null }): Promise<DebtRecord>;
   increaseDebt(debtId: string, input: { amount: string; description: string; occurred_at: string; idempotency_key: string }): Promise<DebtRecord>;
   recordDebtPayment(debtId: string, input: { amount: string; account_id: string | null; paid_at: string; idempotency_key: string }): Promise<{ outstanding: string }>;
+  previewCreditCardAuthorization(debtId: string, amount: string): Promise<{
+    previous_balance: string;
+    projected_balance: string;
+    purchase_amount: string;
+    available_credit: string;
+    available_overdraft: string;
+    uses_overdraft: boolean;
+    fee: string;
+    tax: string;
+    total_fee: string;
+    total_charge: string;
+    fee_rule: { id: number | string; trigger: string; formula_type: string; source_url: string | null; verification_status: string } | null;
+    contractual_conditions: {
+      annual_interest_rate: string;
+      is_promotional: boolean;
+      effective_source: string;
+      fee_source: string;
+      verified_official_source: string | null;
+      rule_used: string;
+      operation_date: string;
+    };
+  }>;
   listCalendar(from: string, to: string): Promise<CalendarEvent[]>;
   getCashFlowReport(from: string, to: string, groupBy: string): Promise<CashFlowReport>;
   getSettings(): Promise<Preferences>;
@@ -80,4 +121,31 @@ export interface ApiClient {
   listChatMessages(): Promise<ChatMessageItem[]>;
   sendChatMessage(message: string): Promise<ChatMessageItem>;
   clearChatMessages(): Promise<void>;
+  listCatalogInstitutions(q?: string, type?: string): Promise<CatalogInstitution[]>;
+  listCatalogCategories(): Promise<CatalogCategory[]>;
+  listCatalogProducts(institutionId?: string, category?: string, q?: string): Promise<CatalogProduct[]>;
+  listCatalogVariants(productId: string): Promise<CatalogProductVariant[]>;
+  linkCatalogProduct(input: { entity_type: 'account' | 'debt' | 'commitment'; entity_id: string; institution_id: number; variant_id: number }): Promise<{ linked: boolean }>;
+  listFinancialTariffs(status?: string): Promise<unknown[]>;
+  listFinancialTariffSyncLogs(): Promise<unknown[]>;
+  listBudgets(yearMonth?: string): Promise<Budget[]>;
+  createBudget(input: { category: string; monthly_limit: string; year_month: string }): Promise<Budget>;
+  listReserves(): Promise<Reserve[]>;
+  createReserve(input: { name: string; target_amount: string; current_amount?: string; commitment_id?: string | null }): Promise<Reserve>;
+  updateReserveAmount(reserveId: string, input: { current_amount: string }): Promise<Reserve>;
+  deleteReserve(reserveId: string): Promise<{ deleted: boolean }>;
+  listImports(): Promise<ImportedTransaction[]>;
+  importStatement(input: { account_id: string; csv_content: string }): Promise<ImportedTransaction[]>;
+  updateImportStatus(importId: string, status: 'pending' | 'confirmed' | 'discarded' | 'duplicate'): Promise<ImportedTransaction>;
+  getPiggyBankData(month?: string): Promise<PiggyBankData>;
+  depositPiggyBank(input: { amount: string; type: 'deposit' | 'withdrawal'; note?: string }): Promise<{
+    id: number;
+    amount: string;
+    formatted_amount: string;
+    type: string;
+    note: string | null;
+    new_balance: string;
+    formatted_new_balance: string;
+  }>;
+  resetPiggyBank(): Promise<{ message: string; new_balance: string; formatted_new_balance: string }>;
 }

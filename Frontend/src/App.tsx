@@ -11,6 +11,8 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CreateAccountPage, LoginPage } from './pages/AuthPages';
 import { ThemeContext } from './theme/ThemeContext';
+import { PlanningPage } from './pages/PlanningPage';
+import { PiggyBankPage } from './pages/PiggyBankPage';
 
 const brandRamp: BrandVariants = {
   10: '#050b17', 20: '#101c32', 30: '#172c4d', 40: '#1b3b69', 50: '#1d4789', 60: '#1f4b99',
@@ -58,6 +60,8 @@ function AuthRoutes() {
       <Route path="/debts" element={<Navigate to="/commitments" replace />} />
       <Route path="/calendar" element={<RecordsPage kind="calendar" />} />
       <Route path="/transactions" element={<RecordsPage kind="transactions" />} />
+      <Route path="/planning" element={<PlanningPage />} />
+      <Route path="/piggy-bank" element={<PiggyBankPage />} />
       <Route path="/accounts" element={<RecordsPage kind="accounts" />} />
       <Route path="/reports" element={<ReportsPage />} />
       <Route path="/settings" element={<SettingsPage />} />

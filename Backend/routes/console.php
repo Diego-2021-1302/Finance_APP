@@ -22,3 +22,8 @@ Schedule::command('finance:process-card-cutoffs')
     ->dailyAt('00:05')
     ->timezone('America/Santo_Domingo')
     ->withoutOverlapping();
+
+Schedule::command('finance:sync-tariffs')
+    ->dailyAt('03:00')
+    ->timezone('America/Santo_Domingo')
+    ->withoutOverlapping();

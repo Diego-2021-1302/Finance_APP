@@ -2,7 +2,8 @@ import type { ApiClient } from './types';
 import { createUuid } from './uuid';
 import type {
   AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, ExpenseRecord, FinanceInsights,
-  IncomeRecord, Preferences, TransactionRecord, TransferRecord, User,
+  IncomeRecord, Preferences, TransactionRecord, TransferRecord, User, CatalogInstitution, CatalogCategory, CatalogProduct, CatalogProductVariant,
+  ImportedTransaction, PiggyBankData,
 } from '../types';
 
 type Envelope<T> = { data: T };
@@ -36,6 +37,23 @@ type CommitmentResponse = {
   category?: string | null;
   maturity_date?: string | null;
   notes?: string | null;
+  approved_credit_limit?: string | null;
+  authorized_overdraft_limit?: string | null;
+  limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+  special_rules_documented?: boolean;
+  special_rules_source?: string | null;
+  special_rules_reference?: string | null;
+  capacity_metrics?: {
+    approved_credit_limit: string;
+    authorized_overdraft_limit: string;
+    total_authorized_capacity: string;
+    used_balance: string;
+    remaining_approved_credit: string;
+    used_overdraft: string;
+    remaining_overdraft: string;
+    remaining_total_capacity: string;
+    limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+  } | null;
 };
 type RawSettings = {
   currency: 'DOP' | 'USD';
@@ -451,6 +469,13 @@ export const liveClient: ApiClient = {
       category: item.category,
       maturityDate: item.maturity_date ? displayDate(item.maturity_date) : null,
       notes: item.notes,
+      approvedCreditLimit: item.approved_credit_limit == null ? null : toMoney(item.approved_credit_limit),
+      authorizedOverdraftLimit: item.authorized_overdraft_limit == null ? null : toMoney(item.authorized_overdraft_limit),
+      limitStatus: item.limit_status ?? 'unknown',
+      specialRulesDocumented: item.special_rules_documented,
+      specialRulesSource: item.special_rules_source,
+      specialRulesReference: item.special_rules_reference,
+      capacityMetrics: item.capacity_metrics ?? null,
       amount: toMoney(item.amount),
       dueDate: displayDate(item.due_date),
       status: displayStatus(item.status),
@@ -481,6 +506,13 @@ export const liveClient: ApiClient = {
       category: result.data.category,
       maturityDate: result.data.maturity_date ? displayDate(result.data.maturity_date) : null,
       notes: result.data.notes,
+      approvedCreditLimit: result.data.approved_credit_limit == null ? null : toMoney(result.data.approved_credit_limit),
+      authorizedOverdraftLimit: result.data.authorized_overdraft_limit == null ? null : toMoney(result.data.authorized_overdraft_limit),
+      limitStatus: result.data.limit_status ?? 'unknown',
+      specialRulesDocumented: result.data.special_rules_documented,
+      specialRulesSource: result.data.special_rules_source,
+      specialRulesReference: result.data.special_rules_reference,
+      capacityMetrics: result.data.capacity_metrics ?? null,
       amount: toMoney(result.data.amount),
       frequency: result.data.frequency,
       dueDate: displayDate(result.data.next_due_date),
@@ -504,6 +536,13 @@ export const liveClient: ApiClient = {
       category: result.data.category,
       maturityDate: result.data.maturity_date ? displayDate(result.data.maturity_date) : null,
       notes: result.data.notes,
+      approvedCreditLimit: result.data.approved_credit_limit == null ? null : toMoney(result.data.approved_credit_limit),
+      authorizedOverdraftLimit: result.data.authorized_overdraft_limit == null ? null : toMoney(result.data.authorized_overdraft_limit),
+      limitStatus: result.data.limit_status ?? 'unknown',
+      specialRulesDocumented: result.data.special_rules_documented,
+      specialRulesSource: result.data.special_rules_source,
+      specialRulesReference: result.data.special_rules_reference,
+      capacityMetrics: result.data.capacity_metrics ?? null,
       amount: toMoney(result.data.amount),
       frequency: result.data.frequency,
       dueDate: displayDate(result.data.next_due_date),
@@ -541,8 +580,13 @@ export const liveClient: ApiClient = {
   },
 
   async listAccounts() {
-    const result = await request<{ data: Array<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string }> }>('/accounts');
-    return result.data.map((item): AccountRecord => ({ ...item, id: String(item.id), balance: toMoney(item.balance) }));
+    const result = await request<{ data: Array<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string; debt_id: number | null }> }>('/accounts');
+    return result.data.map((item): AccountRecord => ({
+      ...item,
+      id: String(item.id),
+      debtId: item.debt_id == null ? null : String(item.debt_id),
+      balance: toMoney(item.balance),
+    }));
   },
 
   async createFinancialAccount(input) {
@@ -747,6 +791,35 @@ export const liveClient: ApiClient = {
     };
   },
 
+  async previewCreditCardAuthorization(debtId, amount) {
+    const result = await request<{ data: {
+      previous_balance: string;
+      projected_balance: string;
+      purchase_amount: string;
+      available_credit: string;
+      available_overdraft: string;
+      uses_overdraft: boolean;
+      fee: string;
+      tax: string;
+      total_fee: string;
+      total_charge: string;
+      fee_rule: { id: number | string; trigger: string; formula_type: string; source_url: string | null; verification_status: string } | null;
+      contractual_conditions: {
+        annual_interest_rate: string;
+        is_promotional: boolean;
+        effective_source: string;
+        fee_source: string;
+        verified_official_source: string | null;
+        rule_used: string;
+        operation_date: string;
+      };
+    } }>(`/debts/${encodeURIComponent(debtId)}/authorize-card`, {
+      method: 'POST',
+      body: jsonBody({ amount }),
+    });
+    return result.data;
+  },
+
   async recordDebtPayment(debtId, input) {
     const result = await request<Envelope<{ debt_id: number; outstanding: string }>>(
       `/debts/${encodeURIComponent(debtId)}/payments`,
@@ -829,5 +902,156 @@ export const liveClient: ApiClient = {
 
   async clearChatMessages() {
     await request<{ data: { cleared: boolean } }>('/chat/messages', { method: 'DELETE' });
+  },
+
+  async listCatalogInstitutions(q?: string, type?: string) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (type) params.set('type', type);
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+    const result = await request<{ data: CatalogInstitution[] }>(`/catalog/institutions${queryStr}`);
+    return result.data;
+  },
+
+  async listCatalogCategories() {
+    const result = await request<{ data: CatalogCategory[] }>('/catalog/categories');
+    return result.data;
+  },
+
+  async listCatalogProducts(institutionId?: string, category?: string, q?: string) {
+    const params = new URLSearchParams();
+    if (institutionId) params.set('institution_id', institutionId);
+    if (category) params.set('category', category);
+    if (q) params.set('q', q);
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+    const result = await request<{ data: CatalogProduct[] }>(`/catalog/products${queryStr}`);
+    return result.data;
+  },
+
+  async listCatalogVariants(productId: string) {
+    const result = await request<{ data: CatalogProductVariant[] }>(`/catalog/variants?product_id=${encodeURIComponent(productId)}`);
+    return result.data;
+  },
+
+  async listFinancialTariffs(status?: string) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const result = await request<{ data: unknown[] }>(`/catalog/tariffs${query}`);
+    return result.data;
+  },
+
+  async listFinancialTariffSyncLogs() {
+    const result = await request<{ data: unknown[] }>('/catalog/sync-logs');
+    return result.data;
+  },
+
+  async listBudgets(yearMonth?: string) {
+    const query = yearMonth ? `?year_month=${encodeURIComponent(yearMonth)}` : '';
+    const result = await request<{ data: Array<{
+      id: number; category: string; monthly_limit: string; year_month: string;
+    }> }>(`/budgets${query}`);
+    return result.data.map((item) => ({
+      ...item,
+      monthly_limit: String(item.monthly_limit),
+    }));
+  },
+
+  async createBudget(input) {
+    const result = await request<{ data: { id: number; category: string; monthly_limit: string; year_month: string } }>('/budgets', {
+      method: 'POST',
+      body: jsonBody(input),
+    });
+    return result.data;
+  },
+
+  async listReserves() {
+    const result = await request<{ data: Array<{
+      id: number; name: string; target_amount: string; current_amount: string; commitment_id: number | null;
+    }> }>(`/reserves`);
+    return result.data;
+  },
+
+  async createReserve(input) {
+    const result = await request<{ data: {
+      id: number; name: string; target_amount: string; current_amount: string; commitment_id: number | null;
+    } }>(`/reserves`, {
+      method: 'POST',
+      body: jsonBody({
+        ...input,
+        commitment_id: input.commitment_id ? Number(input.commitment_id) : null,
+      }),
+    });
+    return result.data;
+  },
+
+  async updateReserveAmount(reserveId, input) {
+    const result = await request<{ data: {
+      id: number; name: string; target_amount: string; current_amount: string; commitment_id: number | null;
+    } }>(`/reserves/${encodeURIComponent(reserveId)}`, {
+      method: 'PATCH',
+      body: jsonBody(input),
+    });
+    return result.data;
+  },
+
+  async deleteReserve(reserveId) {
+    const result = await request<{ data: { deleted: boolean } }>(`/reserves/${encodeURIComponent(reserveId)}`, {
+      method: 'DELETE',
+    });
+    return result.data;
+  },
+
+  async listImports() {
+    const result = await request<{ data: ImportedTransaction[] }>('/imports');
+    return result.data;
+  },
+
+  async importStatement(input) {
+    const result = await request<{ data: ImportedTransaction[] }>('/imports', {
+      method: 'POST',
+      body: jsonBody({
+        account_id: Number(input.account_id),
+        csv_content: input.csv_content,
+      }),
+    });
+    return result.data;
+  },
+
+  async updateImportStatus(importId, status) {
+    const result = await request<{ data: ImportedTransaction }>(`/imports/${encodeURIComponent(importId)}`, {
+      method: 'PATCH',
+      body: jsonBody({ status }),
+    });
+    return result.data;
+  },
+
+  async linkCatalogProduct(input) {
+    const result = await request<{ data: { linked: boolean } }>('/catalog/link', {
+      method: 'POST',
+      body: jsonBody(input),
+    });
+    return result.data;
+  },
+
+  async getPiggyBankData(month?: string) {
+    const query = month ? `?month=${encodeURIComponent(month)}` : '';
+    const result = await request<{ data: PiggyBankData }>(`/piggy-bank${query}`);
+    return result.data;
+  },
+
+  async depositPiggyBank(input) {
+    const result = await request<{ data: {
+      id: number; amount: string; formatted_amount: string; type: string; note: string | null; new_balance: string; formatted_new_balance: string;
+    } }>('/piggy-bank/deposits', {
+      method: 'POST',
+      body: jsonBody(input),
+    });
+    return result.data;
+  },
+
+  async resetPiggyBank() {
+    const result = await request<{ data: { message: string; new_balance: string; formatted_new_balance: string } }>('/piggy-bank/reset', {
+      method: 'POST',
+    });
+    return result.data;
   },
 };

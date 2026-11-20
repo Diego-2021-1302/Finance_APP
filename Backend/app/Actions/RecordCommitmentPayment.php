@@ -39,6 +39,32 @@ class RecordCommitmentPayment
             $commitment = Commitment::query()->where('user_id', $user->id)->whereKey($occurrence->commitment_id)->lockForUpdate()->firstOrFail();
             $remaining = $this->remainingDue($occurrence);
             $isAmortized = in_array($commitment->type, ['loan', 'credit_card'], true);
+
+            // Validate credit limit capacity if payment instrument is a credit card
+            if ($account->type === 'credit_card') {
+                $cardDebt = Debt::query()
+                    ->where('user_id', $user->id)
+                    ->where(function ($q) use ($account) {
+                        if ($account->debt_id) {
+                            $q->where('id', $account->debt_id);
+                        } else {
+                            $q->where('account_id', $account->id)->orWhere('name', $account->name);
+                        }
+                    })
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($cardDebt && $cardDebt->credit_limit !== null) {
+                    $availableCredit = bcsub((string) $cardDebt->credit_limit, (string) $cardDebt->outstanding_amount, 2);
+                    if (bccomp((string) $input['amount'], $availableCredit, 2) === 1) {
+                        $formattedAvailable = number_format((float) $availableCredit, 2, '.', ',');
+                        throw ValidationException::withMessages([
+                            'account_id' => [sprintf('La tarjeta "%s" excede su límite de crédito disponible. (Disponible: RD$ %s)', $account->name, $formattedAvailable)],
+                        ]);
+                    }
+                }
+            }
+
             if (!$isAmortized && bccomp((string) $input['amount'], $remaining, 2) === 1) {
                 throw ValidationException::withMessages(['amount' => 'El pago excede el monto restante a vencer.']);
             }
@@ -55,21 +81,79 @@ class RecordCommitmentPayment
                     throw ValidationException::withMessages(['amount' => 'El pago excede el saldo del préstamo o tarjeta incluyendo los intereses de este período.']);
                 }
             }
+
             $payment = Payment::query()->create([
-                'user_id' => $user->id, 'commitment_occurrence_id' => $occurrence->id, 'account_id' => $account->id,
-                'amount' => $input['amount'], 'paid_at' => $input['paid_at'], 'idempotency_key' => $input['idempotency_key'],
+                'user_id' => $user->id,
+                'commitment_occurrence_id' => $occurrence->id,
+                'account_id' => $account->id,
+                'amount' => $input['amount'],
+                'paid_at' => $input['paid_at'],
+                'idempotency_key' => $input['idempotency_key'],
             ]);
+
             $paidAt = Carbon::parse($input['paid_at']);
+
             FinancialTransaction::query()->create([
-                'user_id' => $user->id, 'account_id' => $account->id, 'payment_id' => $payment->id,
-                'description' => $occurrence->commitment->name, 'amount' => bcsub('0.00', (string) $input['amount'], 2),
-                'occurred_at' => $paidAt, 'kind' => 'commitment_payment',
+                'user_id' => $user->id,
+                'account_id' => $account->id,
+                'payment_id' => $payment->id,
+                'description' => sprintf('%s: %s', $account->type === 'credit_card' ? 'Consumo tarjeta' : 'Pago compromiso', $occurrence->commitment->name),
+                'amount' => bcsub('0.00', (string) $input['amount'], 2),
+                'occurred_at' => $paidAt,
+                'kind' => 'commitment_payment',
             ]);
-            if ($commitment->type === 'credit_card') {
+
+            // If payment instrument is a credit card (paying a utility/service commitment with card)
+            if ($account->type === 'credit_card' && $commitment->type !== 'credit_card') {
+                $cardDebt = Debt::query()
+                    ->where('user_id', $user->id)
+                    ->where(function ($q) use ($account) {
+                        if ($account->debt_id) {
+                            $q->where('id', $account->debt_id);
+                        } else {
+                            $q->where('account_id', $account->id)->orWhere('name', $account->name);
+                        }
+                    })
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($cardDebt) {
+                    $cardDebt->update([
+                        'outstanding_amount' => bcadd((string) $cardDebt->outstanding_amount, (string) $input['amount'], 2),
+                    ]);
+
+                    if ($cardDebt->commitment_id) {
+                        Commitment::query()->where('id', $cardDebt->commitment_id)->update([
+                            'current_balance' => $cardDebt->outstanding_amount,
+                        ]);
+                    }
+
+                    DebtBalanceMovement::query()->create([
+                        'user_id' => $user->id,
+                        'debt_id' => $cardDebt->id,
+                        'payment_id' => $payment->id,
+                        'account_id' => $account->id,
+                        'kind' => 'increase',
+                        'delta' => (string) $input['amount'],
+                        'description' => sprintf('Pago de compromiso con tarjeta: %s', $occurrence->commitment->name),
+                        'occurred_at' => $paidAt,
+                        'idempotency_key' => Str::uuid()->toString(),
+                    ]);
+                }
+            }
+
+            // If commitment BEING PAID is a credit card from a bank account
+            if ($commitment->type === 'credit_card' && $account->type !== 'credit_card') {
                 $debt = Debt::query()
                     ->where('user_id', $user->id)
                     ->where('kind', 'credit_card')
-                    ->where('name', $commitment->name)
+                    ->where(function ($q) use ($commitment) {
+                        if ($commitment->debt_id) {
+                            $q->where('id', $commitment->debt_id);
+                        } else {
+                            $q->where('name', $commitment->name);
+                        }
+                    })
                     ->lockForUpdate()
                     ->firstOrFail();
 
@@ -86,22 +170,33 @@ class RecordCommitmentPayment
                     'occurred_at' => $paidAt,
                     'idempotency_key' => Str::uuid()->toString(),
                 ]);
+
                 $debt->update([
                     'outstanding_amount' => bcsub((string) $debt->outstanding_amount, (string) $input['amount'], 2),
                 ]);
+
+                if ($debt->commitment_id) {
+                    Commitment::query()->where('id', $debt->commitment_id)->update([
+                        'current_balance' => $debt->outstanding_amount,
+                    ]);
+                }
             }
+
             $newRemaining = bccomp((string) $input['amount'], $remaining, 2) >= 0
                 ? '0.00'
                 : bcsub($remaining, (string) $input['amount'], 2);
+
             $amortization->execute($commitment);
             $commitment->refresh();
             $isAmortized = in_array($commitment->type, ['loan', 'credit_card'], true);
             $balancePaidOff = $isAmortized && bccomp((string) $commitment->current_balance, '0.00', 2) === 0;
+
             if ($balancePaidOff) {
                 $newRemaining = '0.00';
                 $occurrence->update(['status' => 'paid']);
                 $commitment->update(['is_active' => false]);
             }
+
             if (!$balancePaidOff && bccomp((string) $input['amount'], $remaining, 2) >= 0) {
                 $occurrence->update(['status' => 'paid']);
                 $firstDueDate = CommitmentOccurrence::query()
@@ -115,6 +210,7 @@ class RecordCommitmentPayment
                     $commitment->update(['next_due_date' => $nextDueDate]);
                 }
             }
+
             return ['payment' => $payment, 'remaining_due' => $newRemaining];
         }, 3);
     }
@@ -124,5 +220,4 @@ class RecordCommitmentPayment
         $paid = Payment::query()->where('commitment_occurrence_id', $occurrence->id)->whereNull('reversed_at')->sum('amount');
         return bcsub((string) $occurrence->amount_due, (string) $paid, 2);
     }
-
 }

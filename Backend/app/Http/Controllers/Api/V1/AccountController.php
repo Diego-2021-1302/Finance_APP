@@ -111,6 +111,7 @@ class AccountController extends Controller
             'currency' => $account->currency,
             'last_four' => $account->last_four,
             'balance' => (string) $balance,
+            'debt_id' => $account->debt_id,
         ];
     }
 }

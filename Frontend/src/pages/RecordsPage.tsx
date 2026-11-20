@@ -5,6 +5,8 @@ import { api, createUuid } from '../api';
 import { EmptyState, ErrorState, LoadingState } from '../components/DataState';
 import { FinanceTable } from '../components/FinanceTable';
 import { DebtBalancesSection } from './DebtsPage';
+import { CardCapacityPanel } from '../components/CardCapacityPanel';
+import { FinancialCatalogSelector } from '../components/FinancialCatalogSelector';
 import type { AccountRecord, CalendarEvent, CommitmentRecord, ExpenseRecord, IncomeRecord, TransactionRecord, TransferRecord } from '../types';
 
 type RecordKind = 'income' | 'expenses' | 'transfers' | 'commitments' | 'calendar' | 'transactions' | 'accounts';
@@ -198,6 +200,28 @@ function ExpensesPage() {
   const [editAccountId, setEditAccountId] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [error, setError] = useState('');
+  const [cardPreview, setCardPreview] = useState<{
+    previous_balance: string;
+    projected_balance: string;
+    purchase_amount: string;
+    available_credit: string;
+    available_overdraft: string;
+    uses_overdraft: boolean;
+    fee: string;
+    tax: string;
+    total_fee: string;
+    total_charge: string;
+    fee_rule: { id: number | string; trigger: string; formula_type: string; source_url: string | null; verification_status: string } | null;
+    contractual_conditions: {
+      annual_interest_rate: string;
+      is_promotional: boolean;
+      effective_source: string;
+      fee_source: string;
+      verified_official_source: string | null;
+      rule_used: string;
+      operation_date: string;
+    };
+  } | null>(null);
   const queryClient = useQueryClient();
   const expenses = useQuery({ queryKey: ['expenses'], queryFn: () => api.listExpenses(), refetchOnMount: 'always' });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
@@ -225,6 +249,19 @@ function ExpensesPage() {
       await queryClient.invalidateQueries();
     },
     onError: (cause) => setError(cause.message),
+  });
+
+  const previewCard = useMutation({
+    mutationFn: ({ debtId, amount }: { debtId: string; amount: string }) =>
+      api.previewCreditCardAuthorization(debtId, amount),
+    onSuccess: (preview) => {
+      setCardPreview(preview);
+      setError('');
+    },
+    onError: (cause) => {
+      setCardPreview(null);
+      setError(cause.message);
+    },
   });
 
   const selectedAcc = accounts.data?.find((a) => a.id === selectedAccountId);
@@ -346,7 +383,60 @@ function ExpensesPage() {
             <MessageBarBody>⚠️ Balance insuficiente: La cuenta "{selectedAcc?.name}" dispone de {selectedAcc?.balance} y no cubre el gasto de RD$ {numAmount.toFixed(2)}.</MessageBarBody>
           </MessageBar>
         )}
-        <Button type="submit" appearance="primary" disabled={create.isPending || Boolean(isInsufficient)} style={{ marginTop: '12px' }}>{create.isPending ? 'Guardando…' : 'Guardar gasto'}</Button>
+        {isCreditCard && selectedAcc?.debtId && (
+          <div style={{ marginTop: '12px', display: 'grid', gap: '8px' }}>
+            <Button
+              type="button"
+              appearance="secondary"
+              disabled={numAmount <= 0 || previewCard.isPending}
+              onClick={() => previewCard.mutate({ debtId: selectedAcc.debtId!, amount: enteredAmount })}
+            >
+              {previewCard.isPending ? 'Evaluando…' : 'Evaluar autorización en el servidor'}
+            </Button>
+            {cardPreview && (
+              <Card style={{ padding: '12px', border: '1px solid var(--border)' }}>
+                <Subtitle1>Vista previa contractual</Subtitle1>
+                <div style={{ display: 'grid', gap: '6px', marginTop: '8px', fontSize: '13px' }}>
+                  <div><strong>Importe:</strong> RD$ {cardPreview.purchase_amount}</div>
+                  <div><strong>Saldo anterior:</strong> RD$ {cardPreview.previous_balance}</div>
+                  <div><strong>Saldo proyectado:</strong> RD$ {cardPreview.projected_balance}</div>
+                  <div><strong>Crédito disponible:</strong> RD$ {cardPreview.available_credit}</div>
+                  <div><strong>Sobregiro disponible:</strong> RD$ {cardPreview.available_overdraft}</div>
+                  <div><strong>Comisión:</strong> RD$ {cardPreview.total_fee}</div>
+                  <div><strong>Impuestos:</strong> RD$ {cardPreview.tax}</div>
+                  <div><strong>Total proyectado:</strong> RD$ {cardPreview.total_charge}</div>
+                  {cardPreview.fee_rule ? (
+                    <div>
+                      <strong>Condición:</strong>{' '}
+                      {cardPreview.fee_rule.verification_status === 'verified'
+                        ? `Regla verificada (${cardPreview.fee_rule.trigger})`
+                        : 'Configuración individual no oficial'}
+                      {cardPreview.fee_rule.source_url && <> · <a href={cardPreview.fee_rule.source_url} target="_blank" rel="noopener noreferrer">Fuente</a></>}
+                    </div>
+                  ) : (
+                    <div><strong>Condición:</strong> Sin comisión aplicable confirmada</div>
+                  )}
+                  <div><strong>Tasa aplicable:</strong> {cardPreview.contractual_conditions.annual_interest_rate}% anual{cardPreview.contractual_conditions.is_promotional ? ' (promoción)' : ''}</div>
+                  <div><strong>Fuente de tasa:</strong> {cardPreview.contractual_conditions.effective_source}</div>
+                  <div><strong>Fuente de comisión:</strong> {cardPreview.contractual_conditions.fee_source}</div>
+                  <div><strong>Fecha de vigencia:</strong> {cardPreview.contractual_conditions.operation_date}</div>
+                  <div><strong>Explicación:</strong> {cardPreview.contractual_conditions.rule_used}</div>
+                  {cardPreview.contractual_conditions.verified_official_source && (
+                    <div><a href={cardPreview.contractual_conditions.verified_official_source} target="_blank" rel="noopener noreferrer">Fuente oficial verificada</a></div>
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+        <Button
+          type="submit"
+          appearance="primary"
+          disabled={create.isPending || Boolean(isInsufficient) || (Boolean(isCreditCard) && (!cardPreview || cardPreview.purchase_amount !== enteredAmount))}
+          style={{ marginTop: '12px' }}
+        >
+          {create.isPending ? 'Guardando…' : 'Guardar gasto'}
+        </Button>
       </form>
     </Card>}
 
@@ -479,6 +569,12 @@ function CommitmentsPage() {
   const [editingCommitment, setEditingCommitment] = useState<CommitmentRecord | null>(null);
   const [error, setError] = useState('');
   const [commitmentType, setCommitmentType] = useState<CommitmentType>('utility');
+  const [catalogSelection, setCatalogSelection] = useState<{
+    institutionId: number;
+    variantId: number;
+    institutionName: string;
+    productName: string;
+  } | null>(null);
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['commitments'], queryFn: api.listCommitments, refetchOnMount: 'always' });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchOnMount: 'always' });
@@ -532,14 +628,18 @@ function CommitmentsPage() {
         name: String(data.get('name')),
         type,
         reference_number: String(data.get('reference_number') || '') || null,
-        institution: String(data.get('institution') || '') || null,
+        institution: catalogSelection?.institutionName || String(data.get('institution') || '') || null,
         current_balance: currentBal,
         statement_balance: stmtBal,
         minimum_payment: String(data.get('minimum_payment') || '') || null,
         statement_day: stmtDay,
         payment_grace_days: graceDays,
         notes: String(data.get('notes') || '') || null,
-      }, { onSuccess: () => { form.reset(); setShowForm(false); } });
+        approved_credit_limit: String(data.get('approved_credit_limit') || '0'),
+        authorized_overdraft_limit: String(data.get('authorized_overdraft_limit') || '0'),
+        financial_institution_id: catalogSelection?.institutionId,
+        financial_product_variant_id: catalogSelection?.variantId,
+      }, { onSuccess: () => { form.reset(); setCatalogSelection(null); setShowForm(false); } });
       return;
     }
 
@@ -585,6 +685,12 @@ function CommitmentsPage() {
           statement_day: stmtDay,
           payment_grace_days: graceDays,
           notes: String(data.get('notes') || '') || null,
+          approved_credit_limit: String(data.get('approved_credit_limit') || '0'),
+          authorized_overdraft_limit: String(data.get('authorized_overdraft_limit') || '0'),
+          limit_status: String(data.get('limit_status') || 'unknown') as 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules',
+          special_rules_documented: data.get('special_rules_documented') === 'on',
+          special_rules_source: String(data.get('special_rules_source') || '') || null,
+          special_rules_reference: String(data.get('special_rules_reference') || '') || null,
         },
       });
       return;
@@ -640,13 +746,47 @@ function CommitmentsPage() {
           <Field label={commitmentType === 'utility' ? 'Nombre de la factura' : commitmentType === 'subscription' ? 'Nombre del servicio' : commitmentType === 'credit_card' ? 'Nombre de la tarjeta' : commitmentType === 'loan' ? 'Nombre del préstamo' : 'Nombre'} required><Input name="name" required maxLength={160} placeholder={commitmentType === 'utility' ? 'ej. Electricidad' : commitmentType === 'subscription' ? 'ej. Streaming' : commitmentType === 'loan' ? 'ej. Préstamo de vehículo' : commitmentType === 'credit_card' ? 'ej. Visa Banco Popular' : 'ej. Alquiler'} /></Field>
 
           {commitmentType === 'credit_card' && <>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <FinancialCatalogSelector
+                categoryFilter="credit_card"
+                onSelectProduct={(selection) => {
+                  setCatalogSelection({
+                    institutionId: selection.institution.id,
+                    variantId: selection.variant.id,
+                    institutionName: selection.institution.name,
+                    productName: selection.product.name,
+                  });
+                }}
+              />
+            </div>
+            {catalogSelection ? (
+              <div style={{ gridColumn: '1 / -1', padding: '10px 14px', background: 'var(--primary-light)', borderRadius: '8px', color: 'var(--primary)', fontSize: '13px' }}>
+                ✅ Vinculado al Catálogo Oficial: <strong>{catalogSelection.institutionName} — {catalogSelection.productName}</strong>
+              </div>
+            ) : (
+              <Field label="Institución Financiera / Banco Emisor" required><Input name="institution" required maxLength={160} placeholder="ej. Banco Popular" /></Field>
+            )}
             <Field label="Referencia (últimos 4 dígitos)" required><Input name="reference_number" required maxLength={4} inputMode="numeric" pattern="[0-9]{4}" placeholder="ej. 4321" /></Field>
-            <Field label="Banco emisor" required><Input name="institution" required maxLength={160} placeholder="ej. Banco Popular" /></Field>
             <Field label="Balance a la fecha (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" required placeholder="Monto consumido hasta hoy" /></Field>
             <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue="15" required placeholder="ej. 15" /></Field>
             <Field label="Días para pago / Vencimiento de pago" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue="21" required placeholder="ej. 21 días" /></Field>
             <Field label="Balance al corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" placeholder="Balance del último estado de cuenta" /></Field>
             <Field label="Pago mínimo informado por el banco (DOP)"><Input name="minimum_payment" type="number" min="0" step="0.01" placeholder="Déjalo vacío si aún no lo tienes" /></Field>
+            <Field label="Límite aprobado (DOP)"><Input name="approved_credit_limit" type="number" min="0" step="0.01" defaultValue="0" /></Field>
+            <Field label="Sobregiro autorizado (DOP)"><Input name="authorized_overdraft_limit" type="number" min="0" step="0.01" defaultValue="0" /></Field>
+            <Field label="Estado del límite" required>
+              <select name="limit_status" defaultValue="unknown">
+                <option value="unknown">Desconocido</option>
+                <option value="pending_verification">Pendiente de verificación</option>
+                <option value="confirmed">Confirmado</option>
+                <option value="special_rules">Reglas especiales documentadas</option>
+              </select>
+            </Field>
+            <Field label="Documentación de reglas especiales">
+              <label><input name="special_rules_documented" type="checkbox" /> Reglas especiales vinculadas y verificadas</label>
+            </Field>
+            <Field label="Fuente contractual"><Input name="special_rules_source" type="url" maxLength={2048} placeholder="URL oficial o documento del contrato" /></Field>
+            <Field label="Referencia contractual"><Input name="special_rules_reference" maxLength={255} placeholder="Núm. de contrato o cláusula" /></Field>
           </>}
 
           {commitmentType === 'loan' && <>
@@ -688,6 +828,21 @@ function CommitmentsPage() {
             <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue={String(editingCommitment.statementDay ?? 15)} required /></Field>
             <Field label="Días para pago / Vencimiento de pago" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue={String(editingCommitment.paymentGraceDays ?? 21)} required /></Field>
             <Field label="Balance al corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" defaultValue={String(Number((editingCommitment.statementBalance ?? '0').replace(/[^\d.]/g, '')) || 0)} /></Field>
+            <Field label="Límite aprobado (DOP)"><Input name="approved_credit_limit" type="number" min="0" step="0.01" defaultValue={editingCommitment.approvedCreditLimit ? String(Number(editingCommitment.approvedCreditLimit.replace(/[^\d.]/g, '')) || 0) : '0'} /></Field>
+            <Field label="Sobregiro autorizado (DOP)"><Input name="authorized_overdraft_limit" type="number" min="0" step="0.01" defaultValue={editingCommitment.authorizedOverdraftLimit ? String(Number(editingCommitment.authorizedOverdraftLimit.replace(/[^\d.]/g, '')) || 0) : '0'} /></Field>
+            <Field label="Estado del límite" required>
+              <select name="limit_status" defaultValue={editingCommitment.limitStatus ?? 'unknown'}>
+                <option value="unknown">Desconocido</option>
+                <option value="pending_verification">Pendiente de verificación</option>
+                <option value="confirmed">Confirmado</option>
+                <option value="special_rules">Reglas especiales documentadas</option>
+              </select>
+            </Field>
+            <Field label="Documentación de reglas especiales">
+              <label><input name="special_rules_documented" type="checkbox" defaultChecked={editingCommitment.specialRulesDocumented ?? false} /> Reglas especiales vinculadas y verificadas</label>
+            </Field>
+            <Field label="Fuente contractual"><Input name="special_rules_source" type="url" maxLength={2048} defaultValue={editingCommitment.specialRulesSource ?? ''} /></Field>
+            <Field label="Referencia contractual"><Input name="special_rules_reference" maxLength={255} defaultValue={editingCommitment.specialRulesReference ?? ''} /></Field>
           </> : <>
             <Field label="Monto a pagar (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={String(Number(editingCommitment.amount.replace(/[^\d.]/g, '')) || 0)} required /></Field>
             <Field label="Frecuencia de pago" required><select name="frequency" defaultValue="monthly"><option value="monthly">Mensual</option><option value="once">Una sola vez</option><option value="weekly">Semanal</option><option value="biweekly">Cada dos semanas</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select></Field>
@@ -711,6 +866,20 @@ function CommitmentsPage() {
           <div className="record-heading"><div><Subtitle1>{item.name}</Subtitle1><Caption1>{item.dueDate} · {item.status}</Caption1></div><strong>{remaining} a vencer</strong></div>
           <Caption1>{commitmentTypes.find((type) => type.value === item.type)?.label ?? 'Compromiso'}{item.category ? ` · ${item.category}` : ''}{item.institution ? ` · ${item.institution}` : ''}</Caption1>
           <Caption1>Monto programado: {item.amount}</Caption1>
+          {item.type === 'credit_card' && (item.limitStatus === 'unknown' || item.limitStatus === 'pending_verification') && (
+            <MessageBar intent="warning" style={{ marginTop: '10px' }}>
+              <MessageBarBody>
+                Falta confirmar el límite aprobado y el sobregiro autorizado. Configure la tarjeta antes de registrar nuevos consumos.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {item.type === 'credit_card' && item.capacityMetrics && (
+            <CardCapacityPanel
+              cardName={item.name}
+              institutionName={item.institution}
+              metrics={item.capacityMetrics}
+            />
+          )}
           {!paid && accounts.data.length > 0 && <details className="debt-action">
             <summary>Registrar pago de compromiso</summary>
             <form className="debt-action-form" onSubmit={(event) => submitPayment(event, item)}>

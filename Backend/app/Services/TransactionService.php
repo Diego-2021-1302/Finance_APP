@@ -71,13 +71,17 @@ class TransactionService
                 'kind' => 'expense',
             ]);
 
-            // If account is a credit card, sync with credit card debt balance
+            // If account is a credit card, authorize transaction and sync debt/overdraft movements
             if ($account->type === 'credit_card') {
                 $debt = \App\Models\Debt::query()
                     ->where('user_id', $user->id)
                     ->where(function ($query) use ($account) {
-                        $query->where('account_id', $account->id)
-                            ->orWhere('name', $account->name);
+                        if ($account->debt_id) {
+                            $query->where('id', $account->debt_id);
+                        } else {
+                            $query->where('account_id', $account->id)
+                                ->orWhere('name', $account->name);
+                        }
                     })
                     ->lockForUpdate()
                     ->first();
@@ -88,16 +92,23 @@ class TransactionService
                         'account_id' => $account->id,
                         'name' => $account->name,
                         'kind' => 'credit_card',
-                        'outstanding_amount' => $input['amount'],
+                        'outstanding_amount' => '0.00',
                         'minimum_payment' => '0.00',
                         'minimum_payment_confirmed' => false,
-                    ]);
-                } else {
-                    $debt->update([
-                        'outstanding_amount' => bcadd((string) $debt->outstanding_amount, (string) $input['amount'], 2),
+                        'approved_credit_limit' => $account->approved_credit_limit ?? $account->credit_limit,
+                        'authorized_overdraft_limit' => $account->authorized_overdraft_limit ?? '0.00',
+                        'limit_status' => ($account->limit_status && $account->limit_status !== 'unknown') ? $account->limit_status : 'confirmed',
+                        'overdraft_fee_type' => $account->overdraft_fee_type ?? 'none',
+                        'overdraft_fee_amount' => $account->overdraft_fee_amount ?? '0.00',
+                        'overdraft_fee_percentage' => $account->overdraft_fee_percentage ?? '0.00',
+                        'overdraft_fee_tax_rate' => $account->overdraft_fee_tax_rate ?? '0.00',
                     ]);
                 }
 
+                $authEngine = app(CreditCardAuthorizationEngine::class);
+                $auth = $authEngine->authorizeTransaction($debt, (string) $input['amount'], (string) $input['idempotency_key']);
+
+                // Record base debt movement for consumption
                 \App\Models\DebtBalanceMovement::query()->create([
                     'user_id' => $user->id,
                     'debt_id' => $debt->id,
@@ -106,8 +117,37 @@ class TransactionService
                     'delta' => $input['amount'],
                     'description' => sprintf('Consumo tarjeta: %s', $input['description']),
                     'occurred_at' => $occurredAt,
-                    'idempotency_key' => Str::uuid()->toString(),
+                    'idempotency_key' => (string) $input['idempotency_key'],
+                    'event_idempotency_key' => (string) $input['idempotency_key'],
                 ]);
+
+                // Record overdraft fee movement if applicable
+                if (bccomp($auth['total_fee'], '0.00', 2) > 0) {
+                    $rule = $auth['fee_rule'];
+                    $ruleId = $rule['id'] ?? 'individual-contract';
+                    $feeKey = $authEngine->feeEventIdempotencyKey((string) $input['idempotency_key'], $ruleId);
+                    \App\Models\DebtBalanceMovement::query()->create([
+                        'user_id' => $user->id,
+                        'debt_id' => $debt->id,
+                        'account_id' => $account->id,
+                        'kind' => 'overdraft_fee',
+                        'delta' => $auth['total_fee'],
+                        'description' => sprintf('Comisión por sobregiro (%s) [fee-rule:%s]', $input['description'], $ruleId),
+                        'occurred_at' => $occurredAt,
+                        'idempotency_key' => $feeKey,
+                        'event_idempotency_key' => (string) $input['idempotency_key'],
+                    ]);
+                }
+
+                $debt->update([
+                    'outstanding_amount' => bcadd((string) $debt->outstanding_amount, $auth['total_charge'], 2),
+                ]);
+
+                if ($debt->commitment_id) {
+                    \App\Models\Commitment::query()->where('id', $debt->commitment_id)->update([
+                        'current_balance' => $debt->outstanding_amount,
+                    ]);
+                }
             }
 
             return ['expense' => $expense, 'account' => $account->refresh(), 'created' => true];
@@ -278,8 +318,11 @@ class TransactionService
             if ($newAccount->type === 'credit_card') {
                 $debt = \App\Models\Debt::query()->where('user_id', $user->id)->where('account_id', $newAccount->id)->first();
                 if ($debt) {
+                    $authEngine = app(CreditCardAuthorizationEngine::class);
+                    $auth = $authEngine->authorizeTransaction($debt, (string) $input['amount']);
+
                     $debt->update([
-                        'outstanding_amount' => bcadd((string) $debt->outstanding_amount, (string) $input['amount'], 2),
+                        'outstanding_amount' => bcadd((string) $debt->outstanding_amount, $auth['total_charge'], 2),
                     ]);
                 }
             }
@@ -313,13 +356,56 @@ class TransactionService
             if ($account->type === 'credit_card') {
                 $debt = \App\Models\Debt::query()->where('user_id', $user->id)->where('account_id', $account->id)->first();
                 if ($debt) {
+                    $feeMovements = \App\Models\DebtBalanceMovement::query()
+                        ->where('debt_id', $debt->id)
+                        ->where('kind', 'overdraft_fee')
+                        ->where('event_idempotency_key', $expense->idempotency_key)
+                        ->get();
+                    $feeTotal = '0.00';
+                    foreach ($feeMovements as $feeMovement) {
+                        if (\App\Models\DebtBalanceMovement::query()
+                            ->where('reversal_of_id', $feeMovement->id)
+                            ->exists()) {
+                            continue;
+                        }
+                        $feeTotal = bcadd($feeTotal, (string) $feeMovement->delta, 2);
+                        \App\Models\DebtBalanceMovement::query()->create([
+                            'user_id' => $user->id,
+                            'debt_id' => $debt->id,
+                            'reversal_of_id' => $feeMovement->id,
+                            'account_id' => $account->id,
+                            'kind' => 'reversal',
+                            'delta' => bcsub('0.00', (string) $feeMovement->delta, 2),
+                            'description' => 'Reversión trazable de comisión por sobregiro',
+                            'occurred_at' => now(),
+                            'idempotency_key' => $this->uuidFromSeed('fee-reversal:' . $expense->idempotency_key . ':' . $feeMovement->id),
+                            'event_idempotency_key' => (string) $expense->idempotency_key,
+                        ]);
+                    }
                     $debt->update([
-                        'outstanding_amount' => bcsub((string) $debt->outstanding_amount, (string) $expense->amount, 2),
+                        'outstanding_amount' => bcsub(
+                            bcsub((string) $debt->outstanding_amount, (string) $expense->amount, 2),
+                            $feeTotal,
+                            2,
+                        ),
                     ]);
                 }
             }
 
             $expense->delete();
         }, 3);
+    }
+
+    private function uuidFromSeed(string $seed): string
+    {
+        $hex = hash('sha256', $seed);
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20, 12),
+        );
     }
 }

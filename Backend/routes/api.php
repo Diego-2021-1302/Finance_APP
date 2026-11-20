@@ -90,6 +90,8 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::get('/debts/{debt}/statements', [DebtController::class, 'statements'])->whereNumber('debt')->name('debts.statements');
     Route::post('/debts/{debt}/increases', [DebtController::class, 'increase'])->whereNumber('debt')->name('debts.increases.store');
     Route::post('/debts/{debt}/payments', [DebtController::class, 'payment'])->whereNumber('debt')->name('debts.payments.store');
+    Route::patch('/debts/{debt}/card-limits', [DebtController::class, 'updateCardLimits'])->whereNumber('debt')->name('debts.card-limits.update');
+    Route::post('/debts/{debt}/authorize-card', [DebtController::class, 'authorizeCardPreview'])->whereNumber('debt')->name('debts.card-authorize.preview');
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
     Route::get('/calendar/summary', [CalendarController::class, 'summary'])->name('calendar.summary');
     Route::get('/priorities', [PaymentPriorityController::class, 'index'])->name('priorities.index');
@@ -106,7 +108,23 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::post('/budgets', [BudgetReserveController::class, 'storeBudget'])->name('budgets.store');
     Route::get('/reserves', [BudgetReserveController::class, 'indexReserves'])->name('reserves.index');
     Route::post('/reserves', [BudgetReserveController::class, 'storeReserve'])->name('reserves.store');
+    Route::patch('/reserves/{reserve}', [BudgetReserveController::class, 'updateReserve'])->whereNumber('reserve')->name('reserves.update');
+    Route::delete('/reserves/{reserve}', [BudgetReserveController::class, 'destroyReserve'])->whereNumber('reserve')->name('reserves.destroy');
     Route::get('/imports', [StatementImportController::class, 'index'])->name('imports.index');
     Route::post('/imports', [StatementImportController::class, 'store'])->name('imports.store');
     Route::patch('/imports/{importedTransaction}', [StatementImportController::class, 'updateStatus'])->whereNumber('importedTransaction')->name('imports.update-status');
+
+    // Financial Catalog & Tariff Sync Routes (Bloque 4 & 5)
+    Route::get('/catalog/institutions', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'institutions'])->name('catalog.institutions');
+    Route::get('/catalog/categories', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'categories'])->name('catalog.categories');
+    Route::get('/catalog/products', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'products'])->name('catalog.products');
+    Route::get('/catalog/variants', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'variants'])->name('catalog.variants');
+    Route::post('/catalog/link', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'link'])->name('catalog.link');
+    Route::get('/catalog/tariffs', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'tariffs'])->name('catalog.tariffs');
+    Route::get('/catalog/sync-logs', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'syncLogs'])->name('catalog.sync-logs');
+
+    // Alcancía / Piggy Bank Routes
+    Route::get('/piggy-bank', [\App\Http\Controllers\Api\V1\PiggyBankController::class, 'index'])->name('piggy-bank.index');
+    Route::post('/piggy-bank/deposits', [\App\Http\Controllers\Api\V1\PiggyBankController::class, 'store'])->name('piggy-bank.deposits.store');
+    Route::post('/piggy-bank/reset', [\App\Http\Controllers\Api\V1\PiggyBankController::class, 'reset'])->name('piggy-bank.reset');
 });

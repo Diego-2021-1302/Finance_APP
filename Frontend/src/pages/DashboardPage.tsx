@@ -19,6 +19,9 @@ export function DashboardPage() {
   const summary = query.data;
   const accounts = accountsQuery.data;
   const liquidAccounts = accounts.filter((account) => account.type !== 'credit_card');
+  const cards = summary.balances.cards ?? [];
+  const debtBreakdown = summary.balances.debtBreakdown ?? [];
+  const reservesBreakdown = summary.balances.reservesBreakdown ?? [];
 
   const metrics = [
     { label: 'Saldo real en cuentas', value: summary.balances.real, detail: `${summary.balances.accountCount} cuentas registradas`, icon: <WalletRegular /> },
@@ -38,6 +41,62 @@ export function DashboardPage() {
             <Caption1>{metric.detail}</Caption1>
           </Card>
         ))}
+      </section>
+
+      <section className="content-grid dashboard-grid">
+        <Card className="content-card">
+          <div className="section-title">
+            <div>
+              <Subtitle1>Desglose confirmado de tarjetas</Subtitle1>
+              <Caption1>Crédito disponible separado del efectivo</Caption1>
+            </div>
+          </div>
+          {cards.length === 0 ? (
+            <div className="empty-inline">No hay tarjetas registradas.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
+              {cards.map((card) => (
+                <details key={card.id} className="debt-action">
+                  <summary>{card.name} · confirmado · saldo {card.balance}</summary>
+                  <div style={{ display: 'grid', gap: '6px', padding: '8px 0', fontSize: '13px' }}>
+                    <div><strong>Límite aprobado:</strong> {card.approved_credit_limit}</div>
+                    <div><strong>Sobregiro autorizado:</strong> {card.authorized_overdraft_limit}</div>
+                    <div><strong>Capacidad restante:</strong> {card.remaining_total_capacity}</div>
+                    <div><strong>Sobregiro restante:</strong> {card.remaining_overdraft}</div>
+                    <div><strong>Estado del límite:</strong> {card.limit_status}</div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="content-card">
+          <div className="section-title">
+            <div>
+              <Subtitle1>Deudas y reservas confirmadas</Subtitle1>
+              <Caption1>Importes registrados, no disponibles como efectivo</Caption1>
+            </div>
+          </div>
+          <details className="debt-action" open>
+            <summary>Deudas ({debtBreakdown.length})</summary>
+            {debtBreakdown.length ? debtBreakdown.map((debt) => (
+              <div key={debt.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '13px' }}>
+                <span>{debt.name} · confirmado</span>
+                <strong>{debt.outstanding}</strong>
+              </div>
+            )) : <Caption1>No hay deudas registradas.</Caption1>}
+          </details>
+          <details className="debt-action" open>
+            <summary>Reservas ({reservesBreakdown.length})</summary>
+            {reservesBreakdown.length ? reservesBreakdown.map((reserve) => (
+              <div key={reserve.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '13px' }}>
+                <span>{reserve.name} · confirmado</span>
+                <strong>{reserve.currentAmount} / {reserve.targetAmount}</strong>
+              </div>
+            )) : <Caption1>No hay reservas registradas.</Caption1>}
+          </details>
+        </Card>
       </section>
 
       {/* Main Content Grid: Priority Payments & Budgets */}

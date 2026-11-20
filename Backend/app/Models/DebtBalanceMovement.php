@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DebtBalanceMovement extends Model
 {
     protected $fillable = [
-        'user_id', 'debt_id', 'payment_id', 'reversal_of_id', 'account_id', 'kind', 'delta', 'description', 'occurred_at', 'idempotency_key',
+        'user_id', 'debt_id', 'payment_id', 'reversal_of_id', 'account_id', 'kind', 'delta', 'description', 'occurred_at', 'idempotency_key', 'event_idempotency_key',
     ];
 
     protected function casts(): array

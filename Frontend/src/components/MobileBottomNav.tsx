@@ -44,7 +44,7 @@ export function MobileBottomNav({
   const navTabs = [
     {
       to: '/',
-      label: 'Tablero',
+      label: 'Inicio',
       icon: location.pathname === '/' ? <HomeFilled /> : <HomeRegular />,
     },
     {

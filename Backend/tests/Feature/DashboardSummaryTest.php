@@ -8,6 +8,7 @@ use App\Models\CommitmentOccurrence;
 use App\Models\FinancialTransaction;
 use App\Models\Payment;
 use App\Models\Reserve;
+use App\Models\Debt;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -81,6 +82,19 @@ class DashboardSummaryTest extends TestCase
             'idempotency_key' => '123e4567-e89b-12d3-a456-426614174004',
         ]);
 
+        Debt::query()->create([
+            'user_id' => $user->id,
+            'account_id' => $card->id,
+            'name' => 'Tarjeta principal',
+            'kind' => 'credit_card',
+            'outstanding_amount' => '3000.00',
+            'approved_credit_limit' => '50000.00',
+            'authorized_overdraft_limit' => '10000.00',
+            'limit_status' => 'confirmed',
+            'minimum_payment' => '0.00',
+            'minimum_payment_confirmed' => false,
+        ]);
+
         $token = $user->createToken('test-token')->plainTextToken;
         $this->withToken($token)->getJson('/api/v1/dashboard/summary')
             ->assertOk()
@@ -90,6 +104,10 @@ class DashboardSummaryTest extends TestCase
             ->assertJsonPath('balances.confirmed', 'RD$ 10,000.00')
             ->assertJsonPath('balances.accountCount', 1)
             ->assertJsonPath('commitments.dueSoon', 'RD$ 670.00')
+            ->assertJsonPath('balances.cards.0.name', 'Tarjeta principal')
+            ->assertJsonPath('balances.cards.0.balance', 'RD$ 3,000.00')
+            ->assertJsonPath('balances.cards.0.remaining_total_capacity', 'RD$ 57,000.00')
+            ->assertJsonPath('balances.debtBreakdown.0.outstanding', 'RD$ 3,000.00')
             ->assertJsonCount(5, 'upcoming')
             ->assertJsonPath('upcoming.0.amount', 'RD$ 70.00');
     }

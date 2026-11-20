@@ -179,6 +179,106 @@ class DebtController extends Controller
         ], $result['created'] ? 201 : 200);
     }
 
+    public function authorizeCardPreview(Request $request, int $debt): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+            'occurred_at' => ['nullable', 'date'],
+        ]);
+
+        $record = Debt::query()
+            ->where('user_id', $request->user()->id)
+            ->where('kind', 'credit_card')
+            ->whereKey($debt)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $authorization = app(\App\Services\CreditCardAuthorizationEngine::class)
+            ->authorizeTransaction($record, (string) $validated['amount'], null);
+        $conditions = app(\App\Services\FinancialProductEngine::class)
+            ->resolveApplicableConditions($record, $request->input('occurred_at') ?: now()->toDateString());
+
+        return response()->json([
+            'data' => [
+                'previous_balance' => $record->outstanding_amount,
+                'projected_balance' => bcadd((string) $record->outstanding_amount, $authorization['total_charge'], 2),
+                'purchase_amount' => $validated['amount'],
+                'available_credit' => $authorization['metrics']['remaining_approved_credit'],
+                'available_overdraft' => $authorization['metrics']['remaining_overdraft'],
+                'uses_overdraft' => $authorization['uses_overdraft'],
+                'fee' => $authorization['fee'],
+                'tax' => $authorization['tax'],
+                'total_fee' => $authorization['total_fee'],
+                'total_charge' => $authorization['total_charge'],
+                'fee_rule' => $authorization['fee_rule'],
+                'contractual_conditions' => [
+                    'annual_interest_rate' => $conditions['annual_interest_rate'],
+                    'is_promotional' => $conditions['is_promotional'],
+                    'effective_source' => $conditions['explanation']['rate_source'],
+                    'fee_source' => $conditions['explanation']['fee_source'],
+                    'verified_official_source' => $conditions['explanation']['verified_official_source'],
+                    'rule_used' => $conditions['explanation']['rule_used'],
+                    'operation_date' => $request->input('occurred_at') ?: now()->toDateString(),
+                ],
+            ],
+        ]);
+    }
+
+    public function updateCardLimits(Request $request, int $debt): JsonResponse
+    {
+        $validated = $request->validate([
+            'approved_credit_limit' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'authorized_overdraft_limit' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'limit_status' => ['required', 'in:confirmed,pending_verification,special_rules'],
+            'special_rules_documented' => ['required_if:limit_status,special_rules', 'boolean'],
+            'special_rules_source' => ['required_if:limit_status,special_rules', 'string', 'max:2048'],
+            'special_rules_reference' => ['required_if:limit_status,special_rules', 'string', 'max:255'],
+        ]);
+
+        $record = DB::transaction(function () use ($request, $debt, $validated) {
+            $record = Debt::query()
+                ->where('user_id', $request->user()->id)
+                ->where('kind', 'credit_card')
+                ->whereKey($debt)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($validated['limit_status'] === 'special_rules'
+                && (!($validated['special_rules_documented'] ?? false))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'limit_status' => ['Las reglas especiales deben estar documentadas y vinculadas a una fuente verificable.'],
+                ]);
+            }
+
+            $attributes = [
+                'approved_credit_limit' => $validated['approved_credit_limit'],
+                'credit_limit' => $validated['approved_credit_limit'],
+                'authorized_overdraft_limit' => $validated['authorized_overdraft_limit'],
+                'limit_status' => $validated['limit_status'],
+                'special_rules_documented' => (bool) ($validated['special_rules_documented'] ?? false),
+                'special_rules_source' => $validated['special_rules_source'] ?? null,
+                'special_rules_reference' => $validated['special_rules_reference'] ?? null,
+            ];
+
+            $record->update($attributes);
+
+            if ($record->account_id) {
+                Account::query()->whereKey($record->account_id)
+                    ->where('user_id', $request->user()->id)
+                    ->update($attributes);
+            }
+            if ($record->commitment_id) {
+                Commitment::query()->whereKey($record->commitment_id)
+                    ->where('user_id', $request->user()->id)
+                    ->update($attributes);
+            }
+
+            return $record->refresh();
+        }, 3);
+
+        return response()->json(['data' => $this->serialize($record)]);
+    }
+
     public function history(Request $request): JsonResponse
     {
         $movements = DebtBalanceMovement::query()
@@ -255,6 +355,12 @@ class DebtController extends Controller
             'minimum_confirmed' => $debt->minimum_payment_confirmed,
             'due_date' => $debt->due_date?->toDateString(),
             'last_four' => $debt->last_four,
+            'approved_credit_limit' => $debt->approved_credit_limit ?? $debt->credit_limit,
+            'authorized_overdraft_limit' => $debt->authorized_overdraft_limit,
+            'limit_status' => $debt->limit_status ?? 'unknown',
+            'special_rules_documented' => (bool) $debt->special_rules_documented,
+            'special_rules_source' => $debt->special_rules_source,
+            'special_rules_reference' => $debt->special_rules_reference,
         ];
     }
 }

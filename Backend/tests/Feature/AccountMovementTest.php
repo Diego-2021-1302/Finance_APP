@@ -54,6 +54,9 @@ class AccountMovementTest extends TestCase
             'type' => 'checking',
             'currency' => 'DOP',
             'is_active' => true,
+            'approved_credit_limit' => '50000.00',
+            'authorized_overdraft_limit' => '10000.00',
+            'limit_status' => 'confirmed',
         ]);
         $token = $user->createToken('test-token')->plainTextToken;
 
@@ -123,17 +126,21 @@ class AccountMovementTest extends TestCase
             'type' => 'credit_card',
             'currency' => 'DOP',
             'is_active' => true,
+            'approved_credit_limit' => '50000.00',
+            'authorized_overdraft_limit' => '10000.00',
+            'limit_status' => 'confirmed',
         ]);
         $token = $user->createToken('test-token')->plainTextToken;
 
-        $this->withToken($token)->postJson('/api/v1/expenses', [
+        $response = $this->withToken($token)->postJson('/api/v1/expenses', [
             'account_id' => $account->id,
             'category' => 'Compras',
             'amount' => '1200.00',
             'occurred_at' => now()->toDateString(),
             'description' => 'Compra con tarjeta',
             'idempotency_key' => '123e4567-e89b-12d3-a456-426614174998',
-        ])->assertCreated();
+        ]);
+        $response->assertCreated();
 
         $this->assertDatabaseHas('debts', [
             'user_id' => $user->id,
