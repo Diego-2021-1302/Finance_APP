@@ -162,6 +162,52 @@ class CreditCardPaymentInstrumentTest extends TestCase
         $this->assertEquals('17000.00', (string) $cardDebt->outstanding_amount);
     }
 
+    public function test_loan_cannot_be_paid_from_credit_card_account(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $loan = Commitment::create([
+            'user_id' => $user->id,
+            'name' => 'Préstamo vehicular',
+            'type' => 'loan',
+            'reference_number' => 'PREST-100',
+            'institution' => 'Banco Popular',
+            'amount' => '5000.00',
+            'frequency' => 'monthly',
+            'next_due_date' => now()->toDateString(),
+            'current_balance' => '50000.00',
+            'interest_rate' => '12.000',
+            'maturity_date' => now()->addYear()->toDateString(),
+            'is_active' => true,
+        ]);
+        $occurrence = CommitmentOccurrence::create([
+            'user_id' => $user->id,
+            'commitment_id' => $loan->id,
+            'amount_due' => '5000.00',
+            'due_date' => now()->toDateString(),
+            'status' => 'scheduled',
+        ]);
+        $card = Account::create([
+            'user_id' => $user->id,
+            'name' => 'Tarjeta origen',
+            'type' => 'credit_card',
+            'currency' => 'DOP',
+            'is_active' => true,
+        ]);
+
+        $response = $this->withToken($token)->postJson("/api/v1/commitments/{$loan->id}/occurrences/{$occurrence->id}/payments", [
+            'amount' => '5000.00',
+            'account_id' => $card->id,
+            'paid_at' => now()->toDateString(),
+            'idempotency_key' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeef',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
+            ->assertJsonPath('error.details.account_id.0', 'Una tarjeta no puede utilizarse como origen para pagar un préstamo o otra tarjeta. Use una cuenta líquida compatible.');
+    }
+
     public function test_payment_exceeding_credit_card_available_limit_fails_authorization(): void
     {
         $user = User::factory()->create();

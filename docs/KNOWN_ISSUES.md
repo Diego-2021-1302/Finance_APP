@@ -21,3 +21,8 @@ This document tracks known issues, technical debt, and areas requiring attention
 ## 5. Frontend-Backend API Coverage
 - **Issue**: Several advanced debt, import, and catalog components in React need full integration with newly validated backend endpoints.
 - **Plan**: Addressed in Bloque 6.
+
+## 6. Catálogo bancario oficial
+- **Estado anterior**: El catálogo local contenía 5 instituciones, 8 productos y 8 variantes.
+- **Corrección**: El seeder fue ampliado a familias de productos oficiales por entidad, el API filtra solo productos y variantes verificadas, y el modelo conserva `verification_status`.
+- **Limitación**: Las condiciones numéricas no extraídas de un tarifario vigente permanecen como `null` y se muestran como desconocidas. No se convierten en cero ni se presentan como datos oficiales confirmados.

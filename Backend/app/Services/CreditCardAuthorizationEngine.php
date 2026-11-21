@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Debt;
-use App\Models\CreditCardFeeRule;
 use App\Models\DebtBalanceMovement;
 use Illuminate\Validation\ValidationException;
 
@@ -178,52 +177,6 @@ class CreditCardAuthorizationEngine
         }
 
         $overdraftPortion = bcsub($prospectiveBalance, $approvedLimit, 2);
-        $rules = CreditCardFeeRule::query()
-            ->where('is_active', true)
-            ->where('verification_status', 'verified')
-            ->whereDate('effective_from', '<=', now()->toDateString())
-            ->where(function ($query) {
-                $query->whereNull('effective_to')
-                    ->orWhereDate('effective_to', '>=', now()->toDateString());
-            })
-            ->where(function ($query) use ($debt) {
-                $query->whereNull('financial_institution_id');
-                if ($debt->financial_institution_id) {
-                    $query->orWhere('financial_institution_id', $debt->financial_institution_id);
-                }
-            })
-            ->where(function ($query) use ($debt) {
-                $query->whereNull('financial_product_variant_id');
-                if ($debt->financial_product_variant_id) {
-                    $query->orWhere('financial_product_variant_id', $debt->financial_product_variant_id);
-                }
-            })
-            ->orderByDesc('effective_from')
-            ->get();
-
-        if ($rules->isNotEmpty()) {
-            foreach ($rules as $rule) {
-                $fee = $this->evaluateFeeRule($debt, $rule, $amount, $usedBalance, $approvedLimit, $overdraftPortion, $eventIdempotencyKey);
-                if (bccomp($fee, '0.00', 2) > 0) {
-                    $tax = '0.00';
-                    if (bccomp((string) $rule->tax_rate, '0.00', 2) > 0) {
-                        $tax = bcmul($fee, bcdiv((string) $rule->tax_rate, '100', 6), 2);
-                    }
-                    return [
-                        'fee' => $fee,
-                        'tax' => $tax,
-                        'rule' => [
-                            'id' => $rule->id,
-                            'trigger' => $rule->trigger,
-                            'formula_type' => $rule->formula_type,
-                            'source_url' => $rule->source_url,
-                            'verification_status' => $rule->verification_status,
-                        ],
-                    ];
-                }
-            }
-        }
-
         // Compatibility fallback: explicit individual contract fields entered by the owner.
         if ($debt->overdraft_fee_type !== 'none') {
             $entersOverdraft = bccomp($usedBalance, $approvedLimit, 2) <= 0;
@@ -260,88 +213,6 @@ class CreditCardAuthorizationEngine
         return ['fee' => '0.00', 'tax' => '0.00', 'rule' => null];
     }
 
-    private function evaluateFeeRule(
-        Debt $debt,
-        CreditCardFeeRule $rule,
-        string $amount,
-        string $usedBalance,
-        string $approvedLimit,
-        string $overdraftPortion,
-        ?string $eventIdempotencyKey,
-    ): string {
-        $exemptions = $rule->exemptions ?? [];
-        if (isset($exemptions['max_amount']) && bccomp($amount, (string) $exemptions['max_amount'], 2) <= 0) {
-            return '0.00';
-        }
-
-        $triggerApplies = match ($rule->trigger) {
-            'overdraft_entry' => bccomp($usedBalance, $approvedLimit, 2) <= 0,
-            'transaction' => true,
-            'threshold' => $rule->threshold_amount !== null
-                && bccomp($overdraftPortion, (string) $rule->threshold_amount, 2) >= 0,
-            'period' => true,
-            default => false,
-        };
-        if (!$triggerApplies) {
-            return '0.00';
-        }
-
-        $marker = '[fee-rule:' . $rule->id . ']';
-        $existing = DebtBalanceMovement::query()
-            ->where('debt_id', $debt->id)
-            ->where('kind', 'overdraft_fee')
-            ->where('description', 'like', '%' . $marker . '%');
-
-        if ($rule->trigger === 'overdraft_entry' || $rule->trigger === 'threshold') {
-            if ($existing->exists()) {
-                return '0.00';
-            }
-        }
-        if ($rule->trigger === 'period') {
-            $frequency = $rule->frequency ?? 'monthly';
-            $periodQuery = DebtBalanceMovement::query()
-                ->where('debt_id', $debt->id)
-                ->where('kind', 'overdraft_fee')
-                ->where('description', 'like', '%' . $marker . '%');
-            if ($frequency === 'monthly') {
-                $periodQuery->whereYear('occurred_at', now()->year)->whereMonth('occurred_at', now()->month);
-            } elseif ($frequency === 'yearly') {
-                $periodQuery->whereYear('occurred_at', now()->year);
-            }
-            if ($periodQuery->exists()) {
-                return '0.00';
-            }
-        }
-        if ($eventIdempotencyKey) {
-            $feeKey = $this->feeEventIdempotencyKey($eventIdempotencyKey, $rule->id);
-            if (DebtBalanceMovement::query()->where('debt_id', $debt->id)->where('idempotency_key', $feeKey)->exists()) {
-                return '0.00';
-            }
-        }
-
-        $fee = '0.00';
-        if ($rule->formula_type === 'fixed') {
-            $fee = (string) $rule->formula_value;
-        } elseif ($rule->formula_type === 'percentage') {
-            $pct = bcdiv((string) $rule->formula_value, '100', 6);
-            $fee = bcmul($overdraftPortion, $pct, 2);
-        }
-        if ($rule->maximum_amount !== null && bccomp($fee, (string) $rule->maximum_amount, 2) > 0) {
-            $fee = (string) $rule->maximum_amount;
-        }
-        return $fee;
-    }
-
-    private function formatDecimal(string $value): string
-    {
-        $negative = str_starts_with($value, '-');
-        $digits = ltrim($value, '+-');
-        [$whole, $fraction] = array_pad(explode('.', $digits, 2), 2, '00');
-        $whole = ltrim($whole, '0') ?: '0';
-        $whole = preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole) ?? $whole;
-        return ($negative ? '-' : '') . $whole . '.' . str_pad(substr($fraction, 0, 2), 2, '0');
-    }
-
     public function feeEventIdempotencyKey(string $eventIdempotencyKey, int|string $ruleId): string
     {
         $hex = hash('sha256', 'overdraft_fee:' . $eventIdempotencyKey . ':' . $ruleId);
@@ -353,5 +224,15 @@ class CreditCardAuthorizationEngine
             substr($hex, 16, 4),
             substr($hex, 20, 12),
         );
+    }
+
+    private function formatDecimal(string $value): string
+    {
+        $negative = str_starts_with($value, '-');
+        $digits = ltrim($value, '+-');
+        [$whole, $fraction] = array_pad(explode('.', $digits, 2), 2, '00');
+        $whole = ltrim($whole, '0') ?: '0';
+        $whole = preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole) ?? $whole;
+        return ($negative ? '-' : '') . $whole . '.' . str_pad(substr($fraction, 0, 2), 2, '0');
     }
 }

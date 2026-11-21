@@ -21,6 +21,7 @@ class StoreExpenseRequest extends FormRequest
             'description' => ['required', 'string', 'max:500'],
             'reference_number' => ['nullable', 'string', 'max:80'],
             'idempotency_key' => ['required', 'uuid'],
+            'confirm_overdraft' => ['sometimes', 'boolean'],
         ];
     }
 }

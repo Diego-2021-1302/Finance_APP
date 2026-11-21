@@ -107,6 +107,11 @@ class TransactionService
 
                 $authEngine = app(CreditCardAuthorizationEngine::class);
                 $auth = $authEngine->authorizeTransaction($debt, (string) $input['amount'], (string) $input['idempotency_key']);
+                if ($auth['uses_overdraft'] && array_key_exists('confirm_overdraft', $input) && !$input['confirm_overdraft']) {
+                    throw ValidationException::withMessages([
+                        'confirm_overdraft' => ['Esta compra utiliza sobregiro. Revise la vista previa y confirme expresamente el uso del sobregiro antes de guardar.'],
+                    ]);
+                }
 
                 // Record base debt movement for consumption
                 \App\Models\DebtBalanceMovement::query()->create([

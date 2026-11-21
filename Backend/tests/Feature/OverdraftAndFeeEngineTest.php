@@ -6,7 +6,6 @@ use App\Models\Account;
 use App\Models\Commitment;
 use App\Models\Debt;
 use App\Models\DebtBalanceMovement;
-use App\Models\CreditCardFeeRule;
 use App\Models\Expense;
 use App\Models\User;
 use App\Services\CreditCardAuthorizationEngine;
@@ -481,58 +480,5 @@ class OverdraftAndFeeEngineTest extends TestCase
         ]);
     }
 
-    public function test_verified_period_rule_is_not_repeated_in_the_same_month(): void
-    {
-        $user = User::factory()->create();
-        $token = $user->createToken('test-token')->plainTextToken;
-
-        $this->withToken($token)->postJson('/api/v1/commitments', [
-            'name' => 'Tarjeta Regla Periódica',
-            'type' => 'credit_card',
-            'reference_number' => '0009',
-            'institution' => 'Banco X',
-            'current_balance' => '48000.00',
-            'statement_day' => 15,
-            'payment_grace_days' => 21,
-            'approved_credit_limit' => '50000.00',
-            'authorized_overdraft_limit' => '10000.00',
-            'limit_status' => 'confirmed',
-        ])->assertCreated();
-
-        $debt = Debt::where('user_id', $user->id)->where('name', 'Tarjeta Regla Periódica')->firstOrFail();
-        CreditCardFeeRule::query()->create([
-            'trigger' => 'period',
-            'formula_type' => 'fixed',
-            'formula_value' => '250.00',
-            'frequency' => 'monthly',
-            'maximum_amount' => '250.00',
-            'tax_rate' => '0.00',
-            'effective_from' => now()->toDateString(),
-            'source_url' => 'https://example.com/contract',
-            'verification_status' => 'verified',
-            'is_active' => true,
-        ]);
-
-        $account = Account::where('user_id', $user->id)->where('name', 'Tarjeta Regla Periódica')->firstOrFail();
-        $engine = app(CreditCardAuthorizationEngine::class);
-
-        $first = $engine->authorizeTransaction($debt, '3000.00', '00000000-0000-0000-0000-000000000010');
-        $this->assertEquals('250.00', $first['total_fee']);
-
-        DebtBalanceMovement::query()->create([
-            'user_id' => $user->id,
-            'debt_id' => $debt->id,
-            'account_id' => $account->id,
-            'kind' => 'overdraft_fee',
-            'delta' => '250.00',
-            'description' => '[fee-rule:' . $first['fee_rule']['id'] . ']',
-            'occurred_at' => now(),
-            'idempotency_key' => $engine->feeEventIdempotencyKey('00000000-0000-0000-0000-000000000010', $first['fee_rule']['id']),
-            'event_idempotency_key' => '00000000-0000-0000-0000-000000000010',
-        ]);
-
-        $second = $engine->authorizeTransaction($debt, '1000.00', '00000000-0000-0000-0000-000000000011');
-        $this->assertEquals('0.00', $second['total_fee']);
-    }
 }
 

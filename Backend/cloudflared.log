@@ -1,201 +1,43 @@
-{"level":"info","time":"2026-11-19T14:25:52Z","message":"Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps"}
-{"level":"info","time":"2026-11-19T14:25:52Z","message":"Requesting new quick Tunnel on trycloudflare.com..."}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"+--------------------------------------------------------------------------------------------+"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  https://grace-layer-alternatives-logging.trycloudflare.com                                |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"+--------------------------------------------------------------------------------------------+"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp]"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Version 2026.9.3 (Checksum f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2)"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"GOOS: windows, GOVersion: go1.26.8, GoArch: amd64"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Settings: map[ha-connections:1 logfile:cloudflared.log pidfile:cloudflared.pid protocol:quic url:http://localhost:8021]"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"cloudflared will not automatically update on Windows systems."}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Generated Connector ID: b9292c93-6058-49dd-a7e5-065eb67d4d3a"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Initial protocol quic"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"ICMP proxy will use 10.0.0.117 as source for IPv4"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"ICMP proxy will use 2001:1308:26e1:4400::4 in zone Ethernet as source for IPv6"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"cloudflared does not support loading the system root certificate pool on Windows. Please use --origin-ca-pool <PATH> to specify the path to the certificate pool"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"ICMP proxy will use 10.0.0.117 as source for IPv4"}
-{"level":"info","event":0,"ip":"2606:4700:a8::6","connIndex":0,"time":"2026-11-19T14:25:56Z","message":"Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256]"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"ICMP proxy will use 2001:1308:26e1:4400::4 in zone Ethernet as source for IPv6"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"Starting metrics server on 127.0.0.1:49576/metrics"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"+-------------------------------------------------------------------------------------+"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|                               CONNECTIVITY PRE-CHECKS                               |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"+-------------------------------------------------------------------------------------+"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  COMPONENT         TARGET                     STATUS  DETAILS                       |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  DNS Resolution    region1.v2.argotunnel.com  PASS    DNS Resolved successfully     |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  DNS Resolution    region2.v2.argotunnel.com  PASS    DNS Resolved successfully     |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  UDP Connectivity  region1.v2.argotunnel.com  PASS    QUIC connection successful    |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  UDP Connectivity  region2.v2.argotunnel.com  PASS    QUIC connection successful    |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  TCP Connectivity  region1.v2.argotunnel.com  PASS    HTTP/2 connection successful  |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  TCP Connectivity  region2.v2.argotunnel.com  PASS    HTTP/2 connection successful  |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  Cloudflare API    api.cloudflare.com:443     PASS    API is reachable              |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|                                                                                     |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"|  SUMMARY: Environment is healthy. cloudflared will use 'quic' as primary protocol.  |"}
-{"level":"info","time":"2026-11-19T14:25:56Z","message":"+-------------------------------------------------------------------------------------+"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"DNS Resolution","target":"region1.v2.argotunnel.com","status":"pass","details":"DNS Resolved successfully","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"DNS Resolution","target":"region2.v2.argotunnel.com","status":"pass","details":"DNS Resolved successfully","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"UDP Connectivity","target":"region1.v2.argotunnel.com","status":"pass","details":"QUIC connection successful","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"UDP Connectivity","target":"region2.v2.argotunnel.com","status":"pass","details":"QUIC connection successful","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"TCP Connectivity","target":"region1.v2.argotunnel.com","status":"pass","details":"HTTP/2 connection successful","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"TCP Connectivity","target":"region2.v2.argotunnel.com","status":"pass","details":"HTTP/2 connection successful","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","component":"Cloudflare API","target":"api.cloudflare.com:443","status":"pass","details":"API is reachable","time":"2026-11-19T14:25:56Z","message":"precheck"}
-{"level":"info","run_id":"bfaea627-6bc0-4ff6-a61b-e65b4371fe9d","hard_fail":false,"suggested_protocol":"quic","time":"2026-11-19T14:25:56Z","message":"precheck complete"}
-{"level":"info","event":0,"connection":"db08585a-ae11-49b2-8cf3-a3f9d9822458","connIndex":0,"location":"mia08","ip":"2606:4700:a8::6","protocol":"quic","time":"2026-11-19T14:25:56Z","message":"Registered tunnel connection"}
-{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T14:31:54Z"}
-{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T14:31:54Z","message":"Request failed"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T15:56:02Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T16:47:21Z"}
-{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T16:47:21Z","message":"Request failed"}
-{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T16:47:22Z"}
-{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T16:47:22Z","message":"Request failed"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T17:56:09Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:31:15Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:36:20Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:41:25Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:46:30Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:51:35Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T18:56:40Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T19:00:03Z"}
-{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/dashboard/summary","time":"2026-11-19T19:00:03Z","message":"Request failed"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T19:01:45Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T19:16:52Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T19:21:57Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T20:32:05Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T20:37:10Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","event":1,"connIndex":0,"originService":"http://localhost:8021","ingressRule":0,"error":"Incoming request ended abruptly: context canceled","time":"2026-11-19T20:56:57Z"}
-{"level":"error","event":0,"ip":"2606:4700:a8::6","connIndex":0,"error":"Incoming request ended abruptly: context canceled","type":"http","dest":"https://grace-layer-alternatives-logging.trycloudflare.com/api/v1/health","time":"2026-11-19T20:56:57Z","message":"Request failed"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T21:57:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:02:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:07:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:12:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:17:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:22:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:27:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:32:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:37:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:43:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:48:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:53:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T22:58:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:03:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:08:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:13:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:18:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:23:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:28:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:33:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:38:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:44:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:49:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:54:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-19T23:59:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:04:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:09:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:14:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:19:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:24:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:29:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:34:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:39:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:45:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:50:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T00:55:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:00:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:05:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:10:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:15:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:20:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:25:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:30:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:35:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:40:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:46:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:51:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T01:56:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:01:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:06:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:11:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:16:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:21:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:26:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:31:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:36:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:41:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:47:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:52:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T02:57:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:02:16Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:07:21Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:12:26Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:17:31Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:22:36Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:27:41Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:32:46Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:37:51Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:42:56Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:48:01Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:53:06Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T03:58:11Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:03:17Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:08:22Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:13:27Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:18:32Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:23:37Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:28:42Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:33:47Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:38:52Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:43:57Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:49:02Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:54:07Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T04:59:12Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:04:17Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:09:22Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:14:27Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:19:32Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:24:37Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:29:42Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T05:34:47Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:09:54Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:14:59Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:20:04Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:25:09Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:30:14Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:35:19Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:40:24Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:45:29Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T12:55:37Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:00:42Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:05:47Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:10:52Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:15:57Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:21:02Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:26:08Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:31:13Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:36:18Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:41:23Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:46:28Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:51:33Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T13:56:38Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T14:11:44Z","message":"Failed to refresh DNS local resolver"}
-{"level":"warn","time":"2026-11-20T14:25:57Z","message":"Your version 2026.9.3 is outdated. We recommend upgrading it to 2026.11.1"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T15:01:54Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T15:06:59Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T16:02:18Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:27:35Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:37:43Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:42:48Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:47:53Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:52:58Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T17:58:03Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T18:03:08Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T18:08:13Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T18:13:18Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T18:18:24Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:33:47Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:38:52Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:43:57Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:49:02Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:54:08Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T19:59:13Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T20:04:18Z","message":"Failed to refresh DNS local resolver"}
-{"level":"error","error":"lookup region1.v2.argotunnel.com: i/o timeout","time":"2026-11-20T20:09:23Z","message":"Failed to refresh DNS local resolver"}
+{"level":"info","time":"2026-11-21T20:06:59Z","message":"Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps"}
+{"level":"info","time":"2026-11-21T20:06:59Z","message":"Requesting new quick Tunnel on trycloudflare.com..."}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"+--------------------------------------------------------------------------------------------+"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"|  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"|  https://compaq-ads-secretariat-experience.trycloudflare.com                               |"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"+--------------------------------------------------------------------------------------------+"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp]"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"Version 2026.9.3 (Checksum f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2)"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"GOOS: windows, GOVersion: go1.26.8, GoArch: amd64"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"Settings: map[ha-connections:1 logfile:cloudflared.log pidfile:cloudflared.pid protocol:quic url:http://localhost:8021]"}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"cloudflared will not automatically update on Windows systems."}
+{"level":"info","time":"2026-11-21T20:07:02Z","message":"Generated Connector ID: ba3fcf4c-b54b-4900-9e75-29454cb1f56d"}
+{"level":"info","time":"2026-11-21T20:07:03Z","message":"Initial protocol quic"}
+{"level":"info","time":"2026-11-21T20:07:03Z","message":"ICMP proxy will use 10.0.0.117 as source for IPv4"}
+{"level":"info","time":"2026-11-21T20:07:03Z","message":"ICMP proxy will use 2001:1308:26e1:4400::2 in zone Ethernet as source for IPv6"}
+{"level":"info","time":"2026-11-21T20:07:03Z","message":"cloudflared does not support loading the system root certificate pool on Windows. Please use --origin-ca-pool <PATH> to specify the path to the certificate pool"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"ICMP proxy will use 10.0.0.117 as source for IPv4"}
+{"level":"info","event":0,"ip":"2606:4700:a8::6","connIndex":0,"time":"2026-11-21T20:07:04Z","message":"Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256]"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"ICMP proxy will use 2001:1308:26e1:4400::2 in zone Ethernet as source for IPv6"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"Starting metrics server on 127.0.0.1:20245/metrics"}
+{"level":"info","event":0,"connection":"24584fd2-6c0d-4916-8ed4-d79e52e7f249","connIndex":0,"location":"mia09","ip":"2606:4700:a8::6","protocol":"quic","time":"2026-11-21T20:07:04Z","message":"Registered tunnel connection"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"+-------------------------------------------------------------------------------------+"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"|                               CONNECTIVITY PRE-CHECKS                               |"}
+{"level":"info","time":"2026-11-21T20:07:04Z","message":"+-------------------------------------------------------------------------------------+"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  COMPONENT         TARGET                     STATUS  DETAILS                       |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  DNS Resolution    region1.v2.argotunnel.com  PASS    DNS Resolved successfully     |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  DNS Resolution    region2.v2.argotunnel.com  PASS    DNS Resolved successfully     |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  UDP Connectivity  region1.v2.argotunnel.com  PASS    QUIC connection successful    |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  UDP Connectivity  region2.v2.argotunnel.com  PASS    QUIC connection successful    |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  TCP Connectivity  region1.v2.argotunnel.com  PASS    HTTP/2 connection successful  |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  TCP Connectivity  region2.v2.argotunnel.com  PASS    HTTP/2 connection successful  |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  Cloudflare API    api.cloudflare.com:443     PASS    API is reachable              |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|                                                                                     |"}
+{"level":"info","time":"2026-11-21T20:07:05Z","message":"|  SUMMARY: Environment is healthy. cloudflared will use 'quic' as primary protocol.  |"}
+{"level":"info","time":"2026-11-21T20:07:06Z","message":"+-------------------------------------------------------------------------------------+"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"DNS Resolution","target":"region1.v2.argotunnel.com","status":"pass","details":"DNS Resolved successfully","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"DNS Resolution","target":"region2.v2.argotunnel.com","status":"pass","details":"DNS Resolved successfully","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"UDP Connectivity","target":"region1.v2.argotunnel.com","status":"pass","details":"QUIC connection successful","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"UDP Connectivity","target":"region2.v2.argotunnel.com","status":"pass","details":"QUIC connection successful","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"TCP Connectivity","target":"region1.v2.argotunnel.com","status":"pass","details":"HTTP/2 connection successful","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"TCP Connectivity","target":"region2.v2.argotunnel.com","status":"pass","details":"HTTP/2 connection successful","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","component":"Cloudflare API","target":"api.cloudflare.com:443","status":"pass","details":"API is reachable","time":"2026-11-21T20:07:06Z","message":"precheck"}
+{"level":"info","run_id":"583df0ba-c3fe-4648-a4af-f14b06669cc6","hard_fail":false,"suggested_protocol":"quic","time":"2026-11-21T20:07:06Z","message":"precheck complete"}

@@ -733,6 +733,11 @@ input::placeholder {
 }
 
 .inline-form { display: grid; gap: 18px; padding: 24px !important; border: 1px solid var(--border) !important; background: var(--glass-bg) !important; border-radius: var(--radius-lg) !important; }
+.commitment-form-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: stretch; justify-content: flex-end; padding: 16px; background: rgba(3, 10, 24, 0.72); backdrop-filter: blur(6px); }
+.commitment-form-panel { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; align-content: start; border-radius: 10px !important; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38); }
+.commitment-form-panel .finance-form { display: grid; gap: 18px; }
+.commitment-form-panel .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.commitment-form-actions { position: sticky; bottom: -24px; display: flex; justify-content: flex-end; gap: 10px; margin: 4px -24px -24px; padding: 14px 24px; border-top: 1px solid var(--border); background: var(--glass-bg); }
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .debt-list { display: grid; gap: 14px; }
@@ -1005,6 +1010,10 @@ input::placeholder {
   }
 
   .form-grid { grid-template-columns: 1fr; }
+  .commitment-form-overlay { padding: 0; }
+  .commitment-form-panel { width: 100%; max-height: 100vh; border-radius: 0 !important; }
+  .commitment-form-panel .form-grid { grid-template-columns: 1fr; }
+  .commitment-form-actions { margin: 4px -24px -24px; }
 
   .chatbot-messages { max-height: 340px; padding: 12px; }
   .chat-bubble { max-width: 92%; padding: 10px 13px; font-size: 12.5px; }

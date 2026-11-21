@@ -105,11 +105,40 @@ export interface CommitmentRecord {
   notes?: string | null;
   approvedCreditLimit?: string | null;
   authorizedOverdraftLimit?: string | null;
+  overdraftFeeType?: string | null;
+  overdraftFeeAmount?: string | null;
+  overdraftFeePercentage?: string | null;
   limitStatus?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
   specialRulesDocumented?: boolean;
   specialRulesSource?: string | null;
   specialRulesReference?: string | null;
   capacityMetrics?: CreditCardCapacityMetrics | null;
+  cardProductName?: string | null;
+  cardVariant?: string | null;
+  cardNetwork?: 'Visa' | 'Mastercard' | 'Amex' | 'Discover' | 'Otra' | null;
+  cardCurrency?: 'DOP' | 'USD' | 'EUR' | null;
+  issuedAt?: string | null;
+  annualFee?: string | null;
+  replacementFee?: string | null;
+  cashAdvanceFee?: string | null;
+  lateFee?: string | null;
+  cardBenefits?: string[] | null;
+  cardPaymentMethods?: string[] | null;
+  isActive?: boolean;
+  debtId?: string | null;
+  accountId?: string | null;
+  termMonths?: number | null;
+  amortizationType?: string | null;
+  contractConditions?: {
+    annual_interest_rate?: string;
+    amortization_type?: string;
+    term_months?: number;
+    source?: Record<string, unknown>;
+  } | null;
+  amortization?: {
+    installment: string;
+    schedule: Array<{ month: number; installment: string; principal_portion: string; interest_portion: string; remaining_balance: string }>;
+  } | null;
   name: string;
   amount: string;
   dueDate: string;
@@ -122,6 +151,30 @@ export interface DebtRecord {
   kind?: string;
   outstanding: string;
   minimum: string | null;
+  dueDate: string;
+  minimumConfirmed?: boolean;
+  lastFour?: string | null;
+  approvedCreditLimit?: string | null;
+  authorizedOverdraftLimit?: string | null;
+  overdraftFeeType?: string | null;
+  overdraftFeeAmount?: string | null;
+  overdraftFeePercentage?: string | null;
+  limitStatus?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+  specialRulesDocumented?: boolean;
+  specialRulesSource?: string | null;
+  specialRulesReference?: string | null;
+  commitmentId?: string | null;
+  accountId?: string | null;
+  termMonths?: number | null;
+  amortizationType?: string | null;
+}
+
+export interface DebtStatementRecord {
+  id: string;
+  statementDate: string;
+  closingBalance: string;
+  minimumPayment: string | null;
+  minimumPaymentConfirmed: boolean;
   dueDate: string;
 }
 
@@ -142,6 +195,7 @@ export interface CalendarEvent {
   date: string;
   amount: string;
   type: string;
+  commitmentId?: string;
 }
 
 export interface TransactionRecord {
@@ -216,81 +270,6 @@ export interface ChatMessageItem {
   created_at?: string;
 }
 
-export interface FinancialTariffSyncLog {
-  id: number;
-  institution: { id: number; name: string } | null;
-  source_url: string;
-  status: string;
-  document_hash: string | null;
-  document_path: string | null;
-  document_type: string | null;
-  access_status: string;
-  changes_detected: number;
-  error_message: string | null;
-  discovered_at: string | null;
-  sync_completed_at: string | null;
-}
-
-export interface FinancialTariffRecord {
-  id: number;
-  institution: { id: number; name: string } | null;
-  fee_type: string;
-  value: string;
-  unit: string;
-  currency: string;
-  frequency: string;
-  effective_from: string;
-  effective_to: string | null;
-  official_source_url: string | null;
-  source_document_hash: string | null;
-  verification_status: string;
-  version: number;
-  is_active: boolean;
-}
-
-export interface CatalogInstitution {
-  id: number;
-  sb_code: string | null;
-  name: string;
-  type: string;
-  logo_url: string | null;
-  is_active: boolean;
-}
-
-export interface CatalogCategory {
-  code: string;
-  label: string;
-}
-
-export interface CatalogProductVariant {
-  id: number;
-  financial_product_id: number;
-  variant_name: string;
-  min_credit_limit: string | null;
-  max_credit_limit: string | null;
-  annual_interest_rate: string | null;
-  overdraft_fee_type: string;
-  overdraft_fee_amount: string;
-  overdraft_fee_percentage: string;
-  overdraft_fee_tax_rate: string;
-  grace_days: number;
-  verified: boolean;
-  notes: string | null;
-}
-
-export interface CatalogProduct {
-  id: number;
-  financial_institution_id: number;
-  name: string;
-  category: string;
-  currency: string;
-  verified: boolean;
-  official_source: string | null;
-  is_active: boolean;
-  institution?: CatalogInstitution;
-  variants?: CatalogProductVariant[];
-}
-
 export interface ApiErrorPayload {
   error: {
     code: 'VALIDATION_ERROR' | 'NOT_FOUND' | 'CONFLICT' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'INTERNAL_ERROR';
@@ -330,4 +309,34 @@ export interface PiggyBankData {
   };
   calendar: PiggyBankCalendarDay[];
   history: PiggyBankDepositItem[];
+}
+
+export interface FinancialPlan {
+  currency: 'DOP';
+  days: number;
+  account_balance: string;
+  virtual_reserves: string;
+  allocatable_now: string;
+  suggested_total: string;
+  free_after_plan: string;
+  uncovered_total: string;
+  obligations: Array<{
+    occurrence_id: number;
+    commitment_id: number;
+    name: string;
+    type: string;
+    due_date: string;
+    overdue: boolean;
+    amount_due: string;
+    suggested_reserve: string;
+    shortfall: string;
+    minimum_required: string;
+    minimum_confirmed: boolean;
+    annual_interest_rate: string;
+    estimated_30_day_interest_if_unpaid: string;
+    estimated_late_fee: string;
+    reason: string;
+  }>;
+  expected_incomes: Array<{ source: string; date: string; remaining: string }>;
+  warnings: string[];
 }

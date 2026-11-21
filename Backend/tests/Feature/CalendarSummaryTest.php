@@ -49,5 +49,9 @@ class CalendarSummaryTest extends TestCase
             ->assertJsonPath('total_pending', '1500.00')
             ->assertJsonPath('total_reserved', '500.00')
             ->assertJsonPath('total_uncovered', '1000.00');
+
+        $calendar = $this->withToken($token)->getJson('/api/v1/calendar?from=' . now()->startOfMonth()->toDateString() . '&to=' . now()->endOfMonth()->toDateString());
+        $calendar->assertOk()
+            ->assertJsonFragment(['commitment_id' => $commitment->id]);
     }
 }

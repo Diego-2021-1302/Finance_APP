@@ -39,16 +39,35 @@ class PaymentPriorityService
                 $reason = sprintf('Vence el %s. Importe pendiente: %s.', $occ->due_date->format('M j'), $remaining);
             }
 
+            $type = $occ->commitment?->type ?? 'other';
+            $rate = max(0, (float) ($occ->commitment?->interest_rate ?? 0));
+
             return [
                 'commitment_id' => $occ->commitment_id,
                 'occurrence_id' => $occ->id,
                 'name' => $occ->commitment?->name ?? 'Compromiso',
+                'type' => $type,
                 'due_date' => $occ->due_date->toDateString(),
                 'days_remaining' => $daysRemaining,
                 'amount_due' => $remaining,
+                'annual_interest_rate' => number_format($rate, 3, '.', ''),
                 'urgency' => $urgency,
                 'reason' => $reason,
             ];
-        })->sortBy(fn ($item) => $item['days_remaining'])->values();
+        })->sort(function ($a, $b) {
+            // Overdue and critical urgency first
+            $urgencyWeight = ['critical' => 0, 'high' => 1, 'normal' => 2];
+            $uA = $urgencyWeight[$a['urgency']] ?? 2;
+            $uB = $urgencyWeight[$b['urgency']] ?? 2;
+            if ($uA !== $uB) return $uA <=> $uB;
+
+            // Earliest due date
+            if ($a['days_remaining'] !== $b['days_remaining']) {
+                return $a['days_remaining'] <=> $b['days_remaining'];
+            }
+
+            // Higher interest rate next
+            return (float) $b['annual_interest_rate'] <=> (float) $a['annual_interest_rate'];
+        })->values();
     }
 }

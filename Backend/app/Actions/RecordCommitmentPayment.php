@@ -40,6 +40,12 @@ class RecordCommitmentPayment
             $remaining = $this->remainingDue($occurrence);
             $isAmortized = in_array($commitment->type, ['loan', 'credit_card'], true);
 
+            if ($account->type === 'credit_card' && in_array($commitment->type, ['loan', 'credit_card'], true)) {
+                throw ValidationException::withMessages([
+                    'account_id' => ['Una tarjeta no puede utilizarse como origen para pagar un préstamo o otra tarjeta. Use una cuenta líquida compatible.'],
+                ]);
+            }
+
             // Validate credit limit capacity if payment instrument is a credit card
             if ($account->type === 'credit_card') {
                 $cardDebt = Debt::query()

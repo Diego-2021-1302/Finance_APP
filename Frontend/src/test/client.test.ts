@@ -178,6 +178,62 @@ describe('live API client', () => {
     expect(JSON.parse(String(insightsCall[1]?.body))).toEqual({ consent: true });
   });
 
+  it('pauses and resumes a commitment through live API routes', async () => {
+    const fetchStub = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: 21, name: 'Internet', type: 'utility', amount: '2450.00', frequency: 'monthly', next_due_date: '2026-12-20', is_active: false },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: 21, name: 'Internet', type: 'utility', amount: '2450.00', frequency: 'monthly', next_due_date: '2026-12-20', is_active: true },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchStub);
+    storedValues.set('finance-app.access-token', 'commitment-token');
+
+    const { liveClient } = await import('../api/client');
+    await expect(liveClient.pauseCommitment('21')).resolves.toMatchObject({ id: '21', isActive: false });
+    await expect(liveClient.resumeCommitment('21')).resolves.toMatchObject({ id: '21', isActive: true });
+
+    expect(fetchStub.mock.calls.map((call) => call[0])).toEqual([
+      '/api/v1/commitments/21/pause',
+      '/api/v1/commitments/21/resume',
+    ]);
+  });
+
+  it('sends unknown card limits as null instead of confirmed zero values', async () => {
+    const fetchStub = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({
+      data: {
+        id: 42,
+        name: 'Tarjeta sin verificar',
+        type: 'credit_card',
+        amount: '12500.00',
+        due_date: null,
+        next_due_date: null,
+        approved_credit_limit: null,
+        authorized_overdraft_limit: null,
+        limit_status: 'unknown',
+      },
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchStub);
+    storedValues.set('finance-app.access-token', 'commitment-token');
+
+    const { liveClient } = await import('../api/client');
+    await liveClient.createCommitment({
+      name: 'Tarjeta sin verificar',
+      type: 'credit_card',
+      reference_number: '4321',
+      institution: 'Banco Popular',
+      current_balance: '12500.00',
+      approved_credit_limit: null,
+      authorized_overdraft_limit: null,
+      limit_status: 'unknown',
+    });
+
+    const body = JSON.parse(String(fetchStub.mock.calls[0][1]?.body));
+    expect(body.approved_credit_limit).toBeNull();
+    expect(body.authorized_overdraft_limit).toBeNull();
+    expect(body.limit_status).toBe('unknown');
+  });
+
   it('sends chat messages to the assistant and handles responses', async () => {
     const fetchStub = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({

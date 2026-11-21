@@ -1,9 +1,8 @@
 import type {
-  AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, ExpenseRecord, FinanceInsights,
+  AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, DebtStatementRecord, ExpenseRecord, FinanceInsights,
   IncomeRecord, Preferences, TransactionRecord, TransferRecord, User, ChatMessageItem,
   Budget, Reserve, ImportedTransaction,
-  CatalogInstitution, CatalogCategory, CatalogProduct, CatalogProductVariant,
-  PiggyBankData,
+  PiggyBankData, FinancialPlan,
 } from '../types';
 
 export interface ApiClient {
@@ -14,12 +13,13 @@ export interface ApiClient {
   getDashboardSummary(): Promise<DashboardSummary>;
   getDebtBalanceHistory(): Promise<DebtBalancePoint[]>;
   getFinanceInsights(): Promise<FinanceInsights>;
+  getFinancialPlan(days?: number): Promise<FinancialPlan>;
   listIncomes(): Promise<IncomeRecord[]>;
   createIncome(input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
   updateIncome(incomeId: string, input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
   deleteIncome(incomeId: string): Promise<{ message: string }>;
   recordReceipt(incomeId: string, input: { amount: string; account_id: string; received_at: string; idempotency_key: string }): Promise<{ amount: string; balance: string }>;
-  listCommitments(): Promise<{ commitments: CommitmentRecord[]; occurrences: CommitmentRecord[] }>;
+  listCommitments(filters?: { status?: 'active' | 'inactive' | 'all'; type?: string; institution?: string; search?: string; sort?: 'due' | 'amount' | 'name'; page?: number; per_page?: number }): Promise<{ commitments: CommitmentRecord[]; occurrences: CommitmentRecord[]; summary: { pending_period: string; overdue: string; paid_period: string; pending_debt: string; active_count: number }; meta: { total: number; per_page: number; current_page: number; last_page: number } }>;
   createCommitment(input: {
     name: string;
     type: NonNullable<CommitmentRecord['type']>;
@@ -39,12 +39,24 @@ export interface ApiClient {
     notes?: string | null;
     approved_credit_limit?: string | null;
     authorized_overdraft_limit?: string | null;
+    overdraft_fee_type?: string;
+    overdraft_fee_amount?: string;
+    overdraft_fee_percentage?: string;
     limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
     special_rules_documented?: boolean;
     special_rules_source?: string | null;
     special_rules_reference?: string | null;
-    financial_institution_id?: number;
-    financial_product_variant_id?: number;
+    card_product_name?: string | null;
+    card_variant?: string | null;
+    card_network?: 'Visa' | 'Mastercard' | 'Amex' | 'Discover' | 'Otra' | null;
+    card_currency?: 'DOP' | 'USD' | 'EUR' | null;
+    issued_at?: string | null;
+    annual_fee?: string | null;
+    replacement_fee?: string | null;
+    cash_advance_fee?: string | null;
+    late_fee?: string | null;
+    card_benefits?: string[] | null;
+    card_payment_methods?: string[] | null;
   }): Promise<CommitmentRecord>;
   updateCommitment(commitmentId: string, input: {
     name: string;
@@ -64,14 +76,28 @@ export interface ApiClient {
     notes?: string | null;
     approved_credit_limit?: string | null;
     authorized_overdraft_limit?: string | null;
+    overdraft_fee_type?: string;
+    overdraft_fee_amount?: string;
+    overdraft_fee_percentage?: string;
     limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
     special_rules_documented?: boolean;
     special_rules_source?: string | null;
     special_rules_reference?: string | null;
-    financial_institution_id?: number;
-    financial_product_variant_id?: number;
+    card_product_name?: string | null;
+    card_variant?: string | null;
+    card_network?: 'Visa' | 'Mastercard' | 'Amex' | 'Discover' | 'Otra' | null;
+    card_currency?: 'DOP' | 'USD' | 'EUR' | null;
+    issued_at?: string | null;
+    annual_fee?: string | null;
+    replacement_fee?: string | null;
+    cash_advance_fee?: string | null;
+    late_fee?: string | null;
+    card_benefits?: string[] | null;
+    card_payment_methods?: string[] | null;
   }): Promise<CommitmentRecord>;
   deleteCommitment(commitmentId: string): Promise<{ id: string; deleted: boolean }>;
+  pauseCommitment(commitmentId: string): Promise<CommitmentRecord>;
+  resumeCommitment(commitmentId: string): Promise<CommitmentRecord>;
   recordCommitmentPayment(commitmentId: string, occurrenceId: string, input: { amount: string; account_id: string; paid_at: string; idempotency_key: string }): Promise<{ amount: string; remaining_due: string }>;
   reversePayment(paymentId: string, input: { reason: string; idempotency_key: string }): Promise<{ reversed: boolean; reason: string }>;
   listAccounts(): Promise<AccountRecord[]>;
@@ -81,13 +107,14 @@ export interface ApiClient {
   archiveAccount(accountId: string): Promise<{ id: string; archived: boolean }>;
   reconcileAccount(accountId: string, input: { target_balance: string; reason: string }): Promise<AccountRecord>;
   listExpenses(filters?: { from?: string; to?: string; category?: string; account_id?: string }): Promise<ExpenseRecord[]>;
-  createExpense(input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null; idempotency_key: string }): Promise<ExpenseRecord>;
+  createExpense(input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null; idempotency_key: string; confirm_overdraft?: boolean }): Promise<ExpenseRecord>;
   updateExpense(expenseId: string, input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null }): Promise<ExpenseRecord>;
   deleteExpense(expenseId: string): Promise<{ message: string }>;
   listTransfers(): Promise<TransferRecord[]>;
   createTransfer(input: { source_account_id: string; destination_account_id: string; amount: string; transferred_at: string; notes?: string | null; idempotency_key: string }): Promise<TransferRecord>;
   listTransactions(filters?: { from?: string; to?: string; account_id?: string; q?: string }): Promise<TransactionRecord[]>;
   listDebts(): Promise<DebtRecord[]>;
+  listDebtStatements(debtId: string): Promise<DebtStatementRecord[]>;
   createDebt(input: { name: string; kind: string; outstanding_amount: string; minimum_payment?: string | null; due_date: string | null; last_four: string | null; idempotency_key: string }): Promise<DebtRecord>;
   updateDebtMinimumPayment(debtId: string, input: { minimum_payment: string; due_date?: string | null }): Promise<DebtRecord>;
   increaseDebt(debtId: string, input: { amount: string; description: string; occurred_at: string; idempotency_key: string }): Promise<DebtRecord>;
@@ -96,6 +123,9 @@ export interface ApiClient {
     previous_balance: string;
     projected_balance: string;
     purchase_amount: string;
+    approved_limit: string;
+    authorized_overdraft_limit: string;
+    projected_overdraft: string;
     available_credit: string;
     available_overdraft: string;
     uses_overdraft: boolean;
@@ -121,13 +151,6 @@ export interface ApiClient {
   listChatMessages(): Promise<ChatMessageItem[]>;
   sendChatMessage(message: string): Promise<ChatMessageItem>;
   clearChatMessages(): Promise<void>;
-  listCatalogInstitutions(q?: string, type?: string): Promise<CatalogInstitution[]>;
-  listCatalogCategories(): Promise<CatalogCategory[]>;
-  listCatalogProducts(institutionId?: string, category?: string, q?: string): Promise<CatalogProduct[]>;
-  listCatalogVariants(productId: string): Promise<CatalogProductVariant[]>;
-  linkCatalogProduct(input: { entity_type: 'account' | 'debt' | 'commitment'; entity_id: string; institution_id: number; variant_id: number }): Promise<{ linked: boolean }>;
-  listFinancialTariffs(status?: string): Promise<unknown[]>;
-  listFinancialTariffSyncLogs(): Promise<unknown[]>;
   listBudgets(yearMonth?: string): Promise<Budget[]>;
   createBudget(input: { category: string; monthly_limit: string; year_month: string }): Promise<Budget>;
   listReserves(): Promise<Reserve[]>;

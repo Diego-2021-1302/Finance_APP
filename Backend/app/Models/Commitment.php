@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Commitment extends Model
 {
     protected $fillable = [
-        'user_id', 'account_id', 'debt_id', 'financial_institution_id', 'financial_product_variant_id', 'name', 'type', 'amount', 'frequency', 'next_due_date', 'is_active', 'notes',
+        'user_id', 'account_id', 'debt_id', 'name', 'type', 'amount', 'frequency', 'next_due_date', 'is_active', 'notes',
         'reference_number', 'institution', 'opening_balance', 'current_balance', 'interest_rate', 'category', 'maturity_date',
         'statement_day', 'payment_grace_days', 'statement_balance', 'credit_limit',
         'approved_credit_limit', 'authorized_overdraft_limit', 'limit_status', 'overdraft_fee_type', 'overdraft_fee_amount', 'overdraft_fee_percentage', 'overdraft_fee_tax_rate',
@@ -17,6 +17,8 @@ class Commitment extends Model
         'closing_fee_percentage', 'late_fee_percentage', 'late_fee_fixed', 'amortization_type', 'term_months',
         'promo_interest_rate', 'promo_until_date',
         'special_rules_documented', 'special_rules_source', 'special_rules_reference',
+        'card_product_name', 'card_variant', 'card_network', 'card_currency', 'issued_at',
+        'annual_fee', 'replacement_fee', 'cash_advance_fee', 'late_fee', 'card_benefits', 'card_payment_methods',
     ];
 
     protected function casts(): array
@@ -49,6 +51,13 @@ class Commitment extends Model
             'maturity_date' => 'date',
             'is_active' => 'boolean',
             'special_rules_documented' => 'boolean',
+            'issued_at' => 'date',
+            'annual_fee' => 'decimal:2',
+            'replacement_fee' => 'decimal:2',
+            'cash_advance_fee' => 'decimal:2',
+            'late_fee' => 'decimal:2',
+            'card_benefits' => 'array',
+            'card_payment_methods' => 'array',
         ];
     }
 

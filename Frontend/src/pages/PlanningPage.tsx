@@ -11,14 +11,17 @@ export function PlanningPage() {
   const [csvAccountId, setCsvAccountId] = useState('');
   const [csvContent, setCsvContent] = useState('');
 
+  const [planDays, setPlanDays] = useState(30);
+  const financialPlan = useQuery({ queryKey: ['financial-plan', planDays], queryFn: () => api.getFinancialPlan(planDays) });
+
   const budgets = useQuery({ queryKey: ['budgets', yearMonth], queryFn: () => api.listBudgets(yearMonth) });
   const reserves = useQuery({ queryKey: ['reserves'], queryFn: api.listReserves });
-  const commitments = useQuery({ queryKey: ['commitments'], queryFn: api.listCommitments });
+  const commitments = useQuery({ queryKey: ['commitments'], queryFn: () => api.listCommitments() });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
   const imports = useQuery({ queryKey: ['imports'], queryFn: api.listImports });
 
   const invalidatePlanning = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['budgets', 'reserves', 'imports', 'accounts', 'dashboard-summary'] });
+    await queryClient.invalidateQueries({ queryKey: ['budgets', 'reserves', 'imports', 'accounts', 'dashboard-summary', 'financial-plan'] });
   };
 
   const createBudget = useMutation({
@@ -73,8 +76,52 @@ export function PlanningPage() {
     return <ErrorState onRetry={() => void Promise.all([budgets.refetch(), reserves.refetch(), commitments.refetch(), accounts.refetch(), imports.refetch()])} />;
   }
 
+  const plan = financialPlan.data;
+  const money = (value: string) => `RD$ ${Number(value).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
     <>
+      <Card className="content-card" style={{ marginBottom: '16px' }}>
+        <Subtitle1>Plan de distribución de ingresos y compromisos</Subtitle1>
+        <p>Recomendación orientativa: cubre cuotas y mínimos confirmados, y luego prioriza saldos con mayor costo financiero. No realiza pagos ni mueve dinero.</p>
+        <Field label="Horizonte de planificación">
+          <select value={planDays} onChange={(event) => setPlanDays(Number(event.target.value))}>
+            <option value={7}>7 días</option><option value={15}>15 días</option>
+            <option value={30}>30 días</option><option value={60}>60 días</option><option value={90}>90 días</option>
+          </select>
+        </Field>
+        {financialPlan.isPending ? <LoadingState /> : financialPlan.isError ? <ErrorState onRetry={() => void financialPlan.refetch()} /> : plan && (
+          <>
+            <div className="form-grid" style={{ marginTop: '14px' }}>
+              <div><Caption1>Saldo neto en cuentas DOP</Caption1><Subtitle1>{money(plan.account_balance)}</Subtitle1></div>
+              <div><Caption1>Reservas virtuales existentes</Caption1><Subtitle1>{money(plan.virtual_reserves)}</Subtitle1></div>
+              <div><Caption1>Disponible para asignar</Caption1><Subtitle1>{money(plan.allocatable_now)}</Subtitle1></div>
+              <div><Caption1>Propuesta para compromisos</Caption1><Subtitle1>{money(plan.suggested_total)}</Subtitle1></div>
+              <div><Caption1>Dinero libre después del plan</Caption1><Subtitle1>{money(plan.free_after_plan)}</Subtitle1></div>
+              <div><Caption1>Compromisos sin cobertura</Caption1><Subtitle1>{money(plan.uncovered_total)}</Subtitle1></div>
+            </div>
+            <Subtitle1>Pagos y distribución sugerida</Subtitle1>
+            {plan.obligations.length === 0 ? <EmptyState label="No hay vencimientos pendientes confirmados en el periodo." /> : (
+              <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+                {plan.obligations.map((item: typeof plan.obligations[number]) => (
+                  <div key={item.occurrence_id} className="record-heading">
+                    <div><strong>{item.name}</strong><Caption1>{item.due_date}{item.overdue ? ' · Vencido' : ''} · Pendiente: {money(item.amount_due)}</Caption1><Caption1>Mínimo/cuota: {item.minimum_confirmed ? money(item.minimum_required) : 'No confirmado'} · Tasa anual: {item.annual_interest_rate}%</Caption1><Caption1>Interés simple orientativo a 30 días: {money(item.estimated_30_day_interest_if_unpaid)}</Caption1><Caption1>{item.reason}</Caption1></div>
+                    <div><strong>Asignar: {money(item.suggested_reserve)}</strong>{Number(item.shortfall) > 0 && <Caption1>Faltante: {money(item.shortfall)}</Caption1>}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Subtitle1>Ingresos futuros registrados</Subtitle1>
+            <Caption1>Son previsiones; no aumentan el saldo disponible hasta que se reciban.</Caption1>
+            {plan.expected_incomes.length === 0 ? <EmptyState label="No hay ingresos pendientes previstos en el periodo." /> : (
+              <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+                {plan.expected_incomes.map((item: typeof plan.expected_incomes[number], index: number) => <div key={`${item.date}-${index}`} className="record-heading"><span>{item.source} · {item.date}</span><strong>{money(item.remaining)}</strong></div>)}
+              </div>
+            )}
+            {plan.warnings.map((warning: string) => <Caption1 key={warning} style={{ display: 'block', marginTop: '6px' }}>• {warning}</Caption1>)}
+          </>
+        )}
+      </Card>
       <div className="page-intro">
         <p>Administra presupuestos, reservas e importaciones bancarias sin crear registros contables duplicados.</p>
       </div>

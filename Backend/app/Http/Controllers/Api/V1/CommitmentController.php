@@ -11,6 +11,7 @@ use App\Models\Commitment;
 use App\Models\CommitmentOccurrence;
 use App\Models\DebtBalanceMovement;
 use App\Services\DebtBalanceLedger;
+use App\Support\CreditCardCycleDates;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,30 +33,10 @@ class CommitmentController extends Controller
             $data['opening_balance'] = $data['current_balance'];
             $data['approved_credit_limit'] = $data['approved_credit_limit'] ?? $data['credit_limit'] ?? null;
             $data['authorized_overdraft_limit'] = $data['authorized_overdraft_limit'] ?? '0.00';
-            $requestedStatus = $data['limit_status'] ?? null;
-            if ($requestedStatus === null) {
-                $data['limit_status'] = $data['approved_credit_limit'] !== null ? 'confirmed' : 'unknown';
-            }
-            if ($data['limit_status'] === 'special_rules'
-                && (!($data['special_rules_documented'] ?? false)
-                    || empty($data['special_rules_source'])
-                    || empty($data['special_rules_reference']))) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'limit_status' => ['Las reglas especiales requieren documentación, fuente y referencia contractual verificables.'],
-                ]);
-            }
+            $data['limit_status'] = $data['limit_status'] ?? ($data['approved_credit_limit'] !== null ? 'confirmed' : 'unknown');
 
-            $today = now();
-            $statementDay = min((int) $data['statement_day'], $today->daysInMonth);
-            $statementDate = now()->day($statementDay);
-
-            if ($today->day < $statementDay) {
-                $cutoffDate = $statementDate;
-            } else {
-                $cutoffDate = $statementDate->addMonthNoOverflow();
-            }
-
-            $data['next_due_date'] = $cutoffDate->copy()->addDays((int) $data['payment_grace_days'])->toDateString();
+            $cycle = CreditCardCycleDates::schedule((int) $data['statement_day'], (int) $data['payment_grace_days']);
+            $data['next_due_date'] = $cycle['next_due']->toDateString();
         } elseif (in_array($data['type'] ?? 'other', ['loan'], true)) {
             $data['opening_balance'] = $data['current_balance'];
         }
@@ -77,6 +58,17 @@ class CommitmentController extends Controller
                 $specialRulesDocumented = (bool) ($data['special_rules_documented'] ?? false);
                 $specialRulesSource = $data['special_rules_source'] ?? null;
                 $specialRulesReference = $data['special_rules_reference'] ?? null;
+                $cardProductName = $data['card_product_name'] ?? null;
+                $cardVariant = $data['card_variant'] ?? null;
+                $cardNetwork = $data['card_network'] ?? null;
+                $cardCurrency = $data['card_currency'] ?? null;
+                $issuedAt = $data['issued_at'] ?? null;
+                $annualFee = $data['annual_fee'] ?? null;
+                $replacementFee = $data['replacement_fee'] ?? null;
+                $cashAdvanceFee = $data['cash_advance_fee'] ?? null;
+                $lateFee = $data['late_fee'] ?? null;
+                $cardBenefits = $data['card_benefits'] ?? null;
+                $cardPaymentMethods = $data['card_payment_methods'] ?? null;
                 $feeType = $data['overdraft_fee_type'] ?? 'none';
                 $feeAmount = $data['overdraft_fee_amount'] ?? '0.00';
                 $feePct = $data['overdraft_fee_percentage'] ?? '0.00';
@@ -90,6 +82,17 @@ class CommitmentController extends Controller
                     'special_rules_documented' => $specialRulesDocumented,
                     'special_rules_source' => $specialRulesSource,
                     'special_rules_reference' => $specialRulesReference,
+                    'card_product_name' => $cardProductName,
+                    'card_variant' => $cardVariant,
+                    'card_network' => $cardNetwork,
+                    'card_currency' => $cardCurrency,
+                    'issued_at' => $issuedAt,
+                    'annual_fee' => $annualFee,
+                    'replacement_fee' => $replacementFee,
+                    'cash_advance_fee' => $cashAdvanceFee,
+                    'late_fee' => $lateFee,
+                    'card_benefits' => $cardBenefits,
+                    'card_payment_methods' => $cardPaymentMethods,
                     'overdraft_fee_type' => $feeType,
                     'overdraft_fee_amount' => $feeAmount,
                     'overdraft_fee_percentage' => $feePct,
@@ -118,6 +121,17 @@ class CommitmentController extends Controller
                         'special_rules_documented' => $specialRulesDocumented,
                         'special_rules_source' => $specialRulesSource,
                         'special_rules_reference' => $specialRulesReference,
+                        'card_product_name' => $cardProductName,
+                        'card_variant' => $cardVariant,
+                        'card_network' => $cardNetwork,
+                        'card_currency' => $cardCurrency,
+                        'issued_at' => $issuedAt,
+                        'annual_fee' => $annualFee,
+                        'replacement_fee' => $replacementFee,
+                        'cash_advance_fee' => $cashAdvanceFee,
+                        'late_fee' => $lateFee,
+                        'card_benefits' => $cardBenefits,
+                        'card_payment_methods' => $cardPaymentMethods,
                         'overdraft_fee_type' => $feeType,
                         'overdraft_fee_amount' => $feeAmount,
                         'overdraft_fee_percentage' => $feePct,
@@ -135,6 +149,17 @@ class CommitmentController extends Controller
                         'special_rules_documented' => $specialRulesDocumented,
                         'special_rules_source' => $specialRulesSource,
                         'special_rules_reference' => $specialRulesReference,
+                        'card_product_name' => $cardProductName,
+                        'card_variant' => $cardVariant,
+                        'card_network' => $cardNetwork,
+                        'card_currency' => $cardCurrency,
+                        'issued_at' => $issuedAt,
+                        'annual_fee' => $annualFee,
+                        'replacement_fee' => $replacementFee,
+                        'cash_advance_fee' => $cashAdvanceFee,
+                        'late_fee' => $lateFee,
+                        'card_benefits' => $cardBenefits,
+                        'card_payment_methods' => $cardPaymentMethods,
                         'overdraft_fee_type' => $feeType,
                         'overdraft_fee_amount' => $feeAmount,
                         'overdraft_fee_percentage' => $feePct,
@@ -171,6 +196,17 @@ class CommitmentController extends Controller
                         'special_rules_documented' => $specialRulesDocumented,
                         'special_rules_source' => $specialRulesSource,
                         'special_rules_reference' => $specialRulesReference,
+                        'card_product_name' => $cardProductName,
+                        'card_variant' => $cardVariant,
+                        'card_network' => $cardNetwork,
+                        'card_currency' => $cardCurrency,
+                        'issued_at' => $issuedAt,
+                        'annual_fee' => $annualFee,
+                        'replacement_fee' => $replacementFee,
+                        'cash_advance_fee' => $cashAdvanceFee,
+                        'late_fee' => $lateFee,
+                        'card_benefits' => $cardBenefits,
+                        'card_payment_methods' => $cardPaymentMethods,
                         'overdraft_fee_type' => $feeType,
                         'overdraft_fee_amount' => $feeAmount,
                         'overdraft_fee_percentage' => $feePct,
@@ -247,10 +283,81 @@ class CommitmentController extends Controller
     public function index(Request $request): JsonResponse
     {
         $userId = $request->user()->id;
-        $commitments = Commitment::query()->where('user_id', $userId)->where('is_active', true)->with('occurrences')->orderBy('next_due_date')->get();
+        $status = $request->string('status')->toString() ?: 'active';
+        $commitmentsQuery = Commitment::query()
+            ->where('user_id', $userId)
+            ->with('occurrences');
+
+        if ($status === 'active') {
+            $commitmentsQuery->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $commitmentsQuery->where('is_active', false);
+        }
+
+        $type = $request->string('type')->toString();
+        if ($type !== '') {
+            $commitmentsQuery->where('type', $type);
+        }
+
+        $institution = $request->string('institution')->toString();
+        if ($institution !== '') {
+            $commitmentsQuery->where('institution', 'like', '%' . $institution . '%');
+        }
+
+        $search = $request->string('search')->toString();
+        if ($search !== '') {
+            $commitmentsQuery->where(function ($query) use ($search) {
+                $query->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('institution', 'like', '%' . $search . '%')
+                    ->orWhere('reference_number', 'like', '%' . $search . '%');
+            });
+        }
+
+        $sort = $request->string('sort')->toString() ?: 'due';
+        if ($sort === 'amount') {
+            $commitmentsQuery->orderByRaw('CAST(amount AS DECIMAL(20,2)) DESC');
+        } elseif ($sort === 'name') {
+            $commitmentsQuery->orderBy('name');
+        } else {
+            $commitmentsQuery->orderBy('next_due_date');
+        }
+
+        $perPage = min(max((int) $request->integer('per_page', 25), 1), 100);
+        $commitments = $commitmentsQuery->paginate($perPage, ['*'], 'page', max((int) $request->integer('page', 1), 1));
+
         $occurrences = CommitmentOccurrence::query()->where('user_id', $userId)->with('commitment', 'payments')->orderBy('due_date')->get();
+
+        $activeCommitments = Commitment::query()->where('user_id', $userId)->where('is_active', true)->get();
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
+        $periodOccurrences = CommitmentOccurrence::query()
+            ->where('user_id', $userId)
+            ->whereBetween('due_date', [$monthStart, $monthEnd])
+            ->get();
+        $pendingPeriod = '0.00';
+        $overdue = '0.00';
+        $paidPeriod = '0.00';
+        foreach ($periodOccurrences as $occurrence) {
+            $paid = $occurrence->payments()->whereNull('reversed_at')->sum('amount');
+            $remaining = bcsub((string) $occurrence->amount_due, (string) $paid, 2);
+            if (bccomp($remaining, '0.00', 2) > 0) {
+                $pendingPeriod = bcadd($pendingPeriod, $remaining, 2);
+            }
+            $paidPeriod = bcadd($paidPeriod, (string) $paid, 2);
+            if ($occurrence->due_date->lt(now()->startOfDay()) && bccomp($remaining, '0.00', 2) > 0) {
+                $overdue = bcadd($overdue, $remaining, 2);
+            }
+        }
+        $paidPeriod = (string) \App\Models\Payment::query()
+            ->where('user_id', $userId)
+            ->whereNull('reversed_at')
+            ->whereNotNull('commitment_occurrence_id')
+            ->whereBetween('paid_at', [$monthStart, $monthEnd])
+            ->sum('amount');
+        $pendingDebt = \App\Models\Debt::query()->where('user_id', $userId)->sum('outstanding_amount');
+
         return response()->json([
-            'commitments' => $commitments->map(fn (Commitment $item) => $this->serializeCommitment($item)),
+            'commitments' => collect($commitments->items())->map(fn (Commitment $item) => $this->serializeCommitment($item)),
             'occurrences' => $occurrences->map(function (CommitmentOccurrence $item) {
                 $paid = $item->payments->whereNull('reversed_at')->sum('amount');
                 $serialized = [
@@ -287,6 +394,19 @@ class CommitmentController extends Controller
                 }
                 return $serialized;
             }),
+            'summary' => [
+                'pending_period' => $pendingPeriod,
+                'overdue' => $overdue,
+                'paid_period' => $paidPeriod,
+                'pending_debt' => (string) ($pendingDebt ?: '0.00'),
+                'active_count' => $activeCommitments->count(),
+            ],
+            'meta' => [
+                'total' => $commitments->total(),
+                'per_page' => $commitments->perPage(),
+                'current_page' => $commitments->currentPage(),
+                'last_page' => $commitments->lastPage(),
+            ],
         ]);
     }
 
@@ -304,23 +424,28 @@ class CommitmentController extends Controller
                 'statement_balance' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
                 'statement_day' => ['nullable', 'integer', 'between:1,31'],
                 'payment_grace_days' => ['nullable', 'integer', 'between:1,31'],
-                'approved_credit_limit' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
-                'authorized_overdraft_limit' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
-                'limit_status' => ['required', 'in:unknown,confirmed,pending_verification,special_rules'],
-                'special_rules_documented' => ['required_if:limit_status,special_rules', 'boolean'],
-                'special_rules_source' => ['required_if:limit_status,special_rules', 'string', 'max:2048'],
-                'special_rules_reference' => ['required_if:limit_status,special_rules', 'string', 'max:255'],
-                'financial_institution_id' => ['nullable', 'integer', 'exists:financial_institutions,id'],
-                'financial_product_variant_id' => ['nullable', 'integer', 'exists:financial_product_variants,id'],
+                'interest_rate' => ['nullable', 'numeric', 'between:0,100'],
+                'approved_credit_limit' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'authorized_overdraft_limit' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'limit_status' => ['sometimes', 'in:unknown,confirmed,pending_verification,special_rules'],
+                'overdraft_fee_type' => ['nullable', 'in:none,fixed,percentage,cutoff_fixed,cutoff_percentage,cutoff_both,cutoff_daily'],
+                'overdraft_fee_amount' => ['nullable', 'numeric', 'min:0'],
+                'overdraft_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
+                'card_product_name' => ['nullable', 'string', 'max:160'],
+                'card_variant' => ['nullable', 'string', 'max:160'],
+                'card_network' => ['nullable', 'string', 'in:Visa,Mastercard,Amex,Discover,Otra'],
+                'card_currency' => ['nullable', 'string', 'in:DOP,USD,EUR'],
+                'issued_at' => ['nullable', 'date'],
+                'annual_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'replacement_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'cash_advance_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'late_fee' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'card_benefits' => ['nullable', 'array'],
+                'card_benefits.*' => ['string', 'max:255'],
+                'card_payment_methods' => ['nullable', 'array'],
+                'card_payment_methods.*' => ['string', 'max:255'],
                 'notes' => ['nullable', 'string', 'max:2000'],
             ]);
-
-            if ($validated['limit_status'] === 'special_rules'
-                && (!($validated['special_rules_documented'] ?? false))) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'limit_status' => ['Las reglas especiales deben estar documentadas y vinculadas a una fuente verificable.'],
-                ]);
-            }
 
             DB::transaction(function () use ($record, $validated) {
                 $attributes = [
@@ -332,17 +457,34 @@ class CommitmentController extends Controller
                     'statement_balance' => $validated['statement_balance'] ?? $validated['current_balance'],
                     'statement_day' => $validated['statement_day'] ?? $record->statement_day,
                     'payment_grace_days' => $validated['payment_grace_days'] ?? $record->payment_grace_days,
-                    'approved_credit_limit' => $validated['approved_credit_limit'],
-                    'credit_limit' => $validated['approved_credit_limit'],
-                    'authorized_overdraft_limit' => $validated['authorized_overdraft_limit'],
-                    'limit_status' => $validated['limit_status'],
-                    'special_rules_documented' => (bool) ($validated['special_rules_documented'] ?? false),
-                    'special_rules_source' => $validated['special_rules_source'] ?? null,
-                    'special_rules_reference' => $validated['special_rules_reference'] ?? null,
-                    'financial_institution_id' => $validated['financial_institution_id'] ?? $record->financial_institution_id,
-                    'financial_product_variant_id' => $validated['financial_product_variant_id'] ?? $record->financial_product_variant_id,
+                    'interest_rate' => $validated['interest_rate'] ?? $record->interest_rate ?? '0.00',
+                    'approved_credit_limit' => $validated['approved_credit_limit'] ?? null,
+                    'credit_limit' => $validated['approved_credit_limit'] ?? null,
+                    'authorized_overdraft_limit' => $validated['authorized_overdraft_limit'] ?? '0.00',
+                    'overdraft_fee_type' => $validated['overdraft_fee_type'] ?? 'none',
+                    'overdraft_fee_amount' => $validated['overdraft_fee_amount'] ?? '0.00',
+                    'overdraft_fee_percentage' => $validated['overdraft_fee_percentage'] ?? '0.00',
+                    'limit_status' => $validated['limit_status'] ?? (($validated['approved_credit_limit'] ?? null) !== null ? 'confirmed' : 'unknown'),
+                    'card_product_name' => $validated['card_product_name'] ?? null,
+                    'card_variant' => $validated['card_variant'] ?? null,
+                    'card_network' => $validated['card_network'] ?? null,
+                    'card_currency' => $validated['card_currency'] ?? null,
+                    'issued_at' => $validated['issued_at'] ?? null,
+                    'annual_fee' => $validated['annual_fee'] ?? null,
+                    'replacement_fee' => $validated['replacement_fee'] ?? null,
+                    'cash_advance_fee' => $validated['cash_advance_fee'] ?? null,
+                    'late_fee' => $validated['late_fee'] ?? null,
+                    'card_benefits' => $validated['card_benefits'] ?? null,
+                    'card_payment_methods' => $validated['card_payment_methods'] ?? null,
                     'notes' => $validated['notes'] ?? null,
                 ];
+                // Recompute upcoming due date when the user edits the billing cycle.
+                // Existing statements retain their historical due dates.
+                $cycle = CreditCardCycleDates::schedule(
+                    (int) $attributes['statement_day'],
+                    (int) $attributes['payment_grace_days']
+                );
+                $attributes['next_due_date'] = $cycle['next_due']->toDateString();
                 $record->update($attributes);
 
                 if ($record->account) {
@@ -356,13 +498,15 @@ class CommitmentController extends Controller
             $validated = $request->validate([
                 'name' => ['required', 'string', 'max:160'],
                 'type' => ['required', 'string', 'in:loan,utility,subscription,insurance,rent,other'],
-                'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+                'amount' => ['required', 'numeric', 'gt:0'],
                 'frequency' => ['required', 'string', 'in:once,weekly,biweekly,monthly,quarterly,yearly'],
                 'next_due_date' => ['required', 'date'],
                 'reference_number' => ['nullable', 'string', 'max:80'],
                 'institution' => ['nullable', 'string', 'max:160'],
                 'category' => ['nullable', 'string', 'max:64'],
                 'maturity_date' => ['nullable', 'date'],
+                'current_balance' => ['nullable', 'numeric', 'min:0'],
+                'interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
                 'notes' => ['nullable', 'string', 'max:2000'],
             ]);
 
@@ -378,6 +522,52 @@ class CommitmentController extends Controller
                     ]);
             });
         }
+
+        return response()->json(['data' => $this->serializeCommitment($record->refresh())]);
+    }
+
+    public function pause(Request $request, int $commitment): JsonResponse
+    {
+        $record = Commitment::query()->where('user_id', $request->user()->id)->whereKey($commitment)->firstOrFail();
+
+        DB::transaction(function () use ($record) {
+            $record->update(['is_active' => false]);
+            CommitmentOccurrence::query()
+                ->where('commitment_id', $record->id)
+                ->where('status', 'scheduled')
+                ->whereDoesntHave('payments')
+                ->delete();
+        });
+
+        return response()->json(['data' => $this->serializeCommitment($record->refresh())]);
+    }
+
+    public function resume(Request $request, int $commitment): JsonResponse
+    {
+        $record = Commitment::query()->where('user_id', $request->user()->id)->whereKey($commitment)->firstOrFail();
+
+        DB::transaction(function () use ($record) {
+            $record->update([
+                'is_active' => true,
+                'next_due_date' => $record->next_due_date ?? now()->toDateString(),
+            ]);
+
+            if (!$record->type || $record->type !== 'credit_card') {
+                $hasPending = CommitmentOccurrence::query()
+                    ->where('commitment_id', $record->id)
+                    ->where('status', '!=', 'paid')
+                    ->exists();
+                if (!$hasPending) {
+                    CommitmentOccurrence::query()->create([
+                        'user_id' => $record->user_id,
+                        'commitment_id' => $record->id,
+                        'amount_due' => $record->amount,
+                        'due_date' => $record->next_due_date,
+                        'status' => 'scheduled',
+                    ]);
+                }
+            }
+        });
 
         return response()->json(['data' => $this->serializeCommitment($record->refresh())]);
     }
@@ -422,11 +612,49 @@ class CommitmentController extends Controller
             'special_rules_documented' => (bool) $item->special_rules_documented,
             'special_rules_source' => $item->special_rules_source,
             'special_rules_reference' => $item->special_rules_reference,
+            'card_product_name' => $item->card_product_name,
+            'card_variant' => $item->card_variant,
+            'card_network' => $item->card_network,
+            'card_currency' => $item->card_currency,
+            'issued_at' => $item->issued_at?->toDateString(),
+            'annual_fee' => $item->annual_fee,
+            'replacement_fee' => $item->replacement_fee,
+            'cash_advance_fee' => $item->cash_advance_fee,
+            'late_fee' => $item->late_fee,
+            'card_benefits' => $item->card_benefits,
+            'card_payment_methods' => $item->card_payment_methods,
             'overdraft_fee_type' => $item->overdraft_fee_type,
+            'overdraft_fee_amount' => $item->overdraft_fee_amount,
+            'overdraft_fee_percentage' => $item->overdraft_fee_percentage,
             'category' => $item->category,
             'maturity_date' => $item->maturity_date?->toDateString(),
             'notes' => $item->notes,
+            'is_active' => (bool) $item->is_active,
+            'debt_id' => $item->debt_id,
+            'account_id' => $item->account_id,
+            'term_months' => $item->term_months,
+            'amortization_type' => $item->amortization_type,
         ];
+
+        if ($item->type === 'loan' && $item->current_balance !== null && $item->interest_rate !== null) {
+            $engine = app(\App\Services\FinancialProductEngine::class);
+            $conditions = $engine->resolveApplicableConditions($item);
+            $principal = (string) $item->current_balance;
+            $rate = (string) ($conditions['annual_interest_rate'] ?? $item->interest_rate);
+            $termMonths = (int) ($item->term_months ?? $conditions['term_months'] ?? 12);
+            $amortization = $engine->calculateFrenchAmortization($principal, $rate, $termMonths);
+            $data['contract_conditions'] = [
+                'annual_interest_rate' => $conditions['annual_interest_rate'],
+                'amortization_type' => $conditions['amortization_type'],
+                'term_months' => $conditions['term_months'],
+                'source' => $conditions['explanation'],
+            ];
+            $data['amortization'] = $amortization;
+        }
+
+        if ($item->type === 'credit_card' && $item->debt) {
+            $data['contract_conditions'] = app(\App\Services\FinancialProductEngine::class)->resolveApplicableConditions($item);
+        }
 
         if ($item->type === 'credit_card' && $item->debt) {
             $engine = app(\App\Services\CreditCardAuthorizationEngine::class);

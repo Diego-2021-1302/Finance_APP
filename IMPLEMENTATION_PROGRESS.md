@@ -1,9 +1,10 @@
 # IMPLEMENTATION PROGRESS — GHOST FINANCE
 
 ## Estado Actual
-- **Fecha:** 30 de noviembre de 2026
-- **Último Bloque Finalizado:** BLOQUE 8 Y MÓDULO ALCANCÍA
-- **Estado Global:** ✅ PLAN COMPLETO (BLOQUES 1 AL 8 + MÓDULO ALCANCÍA) EJECUTADO, PROBADO Y VERIFICADO AL 100%
+- **Fecha:** 20 de noviembre de 2026
+- **Último Bloque Finalizado:** BLOQUE 8 — PRUEBAS INTEGRALES Y CIERRE
+- **Estado Global:** ✅ PLAN DE MEJORA DE COMPROMISOS COMPLETADO Y VERIFICADO
+- **Resultado automático:** Backend 87 pruebas / 446 aserciones; Frontend 10 pruebas; build de producción exitoso; recorrido maestro 35 escenarios; catálogo bancario ampliado a 17 instituciones, 68 productos y 68 variantes; sin migraciones pendientes ni diagnósticos.
 
 ---
 
@@ -52,9 +53,12 @@
 
 ---
 
-### BLOQUE 8 — PRUEBAS INTEGRALES, SEGURIDAD Y DESPLIEGUE
+### BLOQUE 8 — PRUEBAS INTEGRALES Y CIERRE
 - **Estado:** ✅ COMPLETADO
-- **Objetivo:** Verificación final mediante la ejecución exitosa de la suite de pruebas completa (81 tests pasados, 369 aserciones) y el build de producción del frontend (`npm run build`).
+- **Objetivo:** Verificación final del módulo Compromisos sin declarar aprobado aquello que no fue ejecutado.
+- **Resultados reales:** Backend 86 pruebas aprobadas / 409 aserciones; Frontend 10 pruebas aprobadas; build de producción completado; recorrido maestro 35 escenarios aprobado con 12 aserciones; todas las migraciones aplicadas; diagnósticos sin errores.
+- **Entregables:** `docs/COMMITMENTS_FINAL_AUDIT.md`, matriz API actualizada y pruebas backend/frontend.
+- **Limitación restante:** No se realizó recorrido Playwright de navegador ni verificación manual humana end-to-end.
 
 ---
 

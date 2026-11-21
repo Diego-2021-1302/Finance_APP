@@ -24,7 +24,7 @@ class CalendarController extends Controller
         $occurrences = CommitmentOccurrence::query()->where('user_id', $userId)->whereBetween('due_date', [$range['from'], $range['to']])->with('commitment')->get();
         $commitments = $occurrences
             ->filter(fn (CommitmentOccurrence $item) => $item->commitment?->type !== 'credit_card')
-            ->map(fn (CommitmentOccurrence $item) => ['event' => $item->commitment?->name ?? 'Commitment', 'date' => $item->due_date->toDateString(), 'amount' => $item->amount_due, 'type' => 'commitment']);
+            ->map(fn (CommitmentOccurrence $item) => ['event' => $item->commitment?->name ?? 'Commitment', 'date' => $item->due_date->toDateString(), 'amount' => $item->amount_due, 'type' => 'commitment', 'commitment_id' => $item->commitment_id]);
         $knownDates = $occurrences->keyBy(fn (CommitmentOccurrence $item) => $item->commitment_id.':'.$item->due_date->toDateString());
         $from = Carbon::parse($range['from']);
         $to = Carbon::parse($range['to']);
@@ -56,7 +56,7 @@ class CalendarController extends Controller
             while ($dueDate !== null && $dueDate <= $to && $steps < 1200) {
                 $known = $knownDates->get($commitment->id.':'.$dueDate->toDateString());
                 if ($known === null) {
-                    $commitments->push(['event' => $commitment->name, 'date' => $dueDate->toDateString(), 'amount' => $commitment->amount, 'type' => 'commitment']);
+                    $commitments->push(['event' => $commitment->name, 'date' => $dueDate->toDateString(), 'amount' => $commitment->amount, 'type' => 'commitment', 'commitment_id' => $commitment->id]);
                 }
                 $dueDate = $recurrence->nextDueDate($dueDate, $commitment->frequency, $baseDay);
                 $steps++;

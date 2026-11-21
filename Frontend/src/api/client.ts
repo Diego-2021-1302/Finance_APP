@@ -2,7 +2,7 @@ import type { ApiClient } from './types';
 import { createUuid } from './uuid';
 import type {
   AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, ExpenseRecord, FinanceInsights,
-  IncomeRecord, Preferences, TransactionRecord, TransferRecord, User, CatalogInstitution, CatalogCategory, CatalogProduct, CatalogProductVariant,
+  IncomeRecord, Preferences, TransactionRecord, TransferRecord, User,
   ImportedTransaction, PiggyBankData,
 } from '../types';
 
@@ -37,12 +37,42 @@ type CommitmentResponse = {
   category?: string | null;
   maturity_date?: string | null;
   notes?: string | null;
+  is_active?: boolean;
+  next_due_date?: string;
   approved_credit_limit?: string | null;
   authorized_overdraft_limit?: string | null;
+  overdraft_fee_type?: string | null;
+  overdraft_fee_amount?: string | null;
+  overdraft_fee_percentage?: string | null;
   limit_status?: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
   special_rules_documented?: boolean;
   special_rules_source?: string | null;
   special_rules_reference?: string | null;
+  card_product_name?: string | null;
+  card_variant?: string | null;
+  card_network?: 'Visa' | 'Mastercard' | 'Amex' | 'Discover' | 'Otra' | null;
+  card_currency?: 'DOP' | 'USD' | 'EUR' | null;
+  issued_at?: string | null;
+  annual_fee?: string | null;
+  replacement_fee?: string | null;
+  cash_advance_fee?: string | null;
+  late_fee?: string | null;
+  card_benefits?: string[] | null;
+  card_payment_methods?: string[] | null;
+  debt_id?: number | null;
+  account_id?: number | null;
+  term_months?: number | null;
+  amortization_type?: string | null;
+  contract_conditions?: {
+    annual_interest_rate?: string;
+    amortization_type?: string;
+    term_months?: number;
+    source?: Record<string, unknown>;
+  } | null;
+  amortization?: {
+    installment: string;
+    schedule: Array<{ month: number; installment: string; principal_portion: string; interest_portion: string; remaining_balance: string }>;
+  } | null;
   capacity_metrics?: {
     approved_credit_limit: string;
     authorized_overdraft_limit: string;
@@ -393,6 +423,10 @@ export const liveClient: ApiClient = {
     }).then((result) => result.data);
   },
 
+  getFinancialPlan(days = 30) {
+    return request<Envelope<import('../types').FinancialPlan>>(`/financial-plan?days=${days}`).then((result) => result.data);
+  },
+
   async listIncomes() {
     const result = await request<{ data: IncomeResponse[]; meta: { total: number } }>('/incomes');
     return result.data.map((item): IncomeRecord => ({
@@ -450,11 +484,18 @@ export const liveClient: ApiClient = {
     return { amount: toMoney(result.data.amount), balance: result.balance.confirmed };
   },
 
-  async listCommitments() {
+  async listCommitments(filters: { status?: 'active' | 'inactive' | 'all'; type?: string; institution?: string; search?: string; sort?: 'due' | 'amount' | 'name'; page?: number; per_page?: number } = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== null) params.set(key, String(value));
+    });
+    const suffix = params.size ? `?${params.toString()}` : '';
     const result = await request<{
       commitments: CommitmentResponse[];
       occurrences: CommitmentResponse[];
-    }>('/commitments');
+      summary: { pending_period: string; overdue: string; paid_period: string; pending_debt: string; active_count: number };
+      meta: { total: number; per_page: number; current_page: number; last_page: number };
+    }>(`/commitments${suffix}`);
     const mapRecord = (item: CommitmentResponse): CommitmentRecord => ({
       id: String(item.id),
       name: item.name ?? 'Commitment',
@@ -471,13 +512,34 @@ export const liveClient: ApiClient = {
       notes: item.notes,
       approvedCreditLimit: item.approved_credit_limit == null ? null : toMoney(item.approved_credit_limit),
       authorizedOverdraftLimit: item.authorized_overdraft_limit == null ? null : toMoney(item.authorized_overdraft_limit),
+      overdraftFeeType: item.overdraft_fee_type ?? null,
+      overdraftFeeAmount: item.overdraft_fee_amount ?? null,
+      overdraftFeePercentage: item.overdraft_fee_percentage ?? null,
       limitStatus: item.limit_status ?? 'unknown',
       specialRulesDocumented: item.special_rules_documented,
       specialRulesSource: item.special_rules_source,
       specialRulesReference: item.special_rules_reference,
+      cardProductName: item.card_product_name,
+      cardVariant: item.card_variant,
+      cardNetwork: item.card_network,
+      cardCurrency: item.card_currency,
+      issuedAt: item.issued_at ? displayDate(item.issued_at) : null,
+      annualFee: item.annual_fee == null ? null : toMoney(item.annual_fee),
+      replacementFee: item.replacement_fee == null ? null : toMoney(item.replacement_fee),
+      cashAdvanceFee: item.cash_advance_fee == null ? null : toMoney(item.cash_advance_fee),
+      lateFee: item.late_fee == null ? null : toMoney(item.late_fee),
+      cardBenefits: item.card_benefits,
+      cardPaymentMethods: item.card_payment_methods,
       capacityMetrics: item.capacity_metrics ?? null,
+      isActive: item.is_active,
+      debtId: item.debt_id == null ? null : String(item.debt_id),
+      accountId: item.account_id == null ? null : String(item.account_id),
+      termMonths: item.term_months ?? null,
+      amortizationType: item.amortization_type ?? null,
+      contractConditions: item.contract_conditions ?? null,
+      amortization: item.amortization ?? null,
       amount: toMoney(item.amount),
-      dueDate: displayDate(item.due_date),
+      dueDate: displayDate(item.due_date ?? item.next_due_date ?? null),
       status: displayStatus(item.status),
     });
     return {
@@ -487,6 +549,8 @@ export const liveClient: ApiClient = {
         commitmentId: String(item.commitment_id),
         remainingAmount: toMoney(item.remaining_amount ?? item.amount),
       })),
+      summary: result.summary,
+      meta: result.meta,
     };
   },
 
@@ -508,6 +572,9 @@ export const liveClient: ApiClient = {
       notes: result.data.notes,
       approvedCreditLimit: result.data.approved_credit_limit == null ? null : toMoney(result.data.approved_credit_limit),
       authorizedOverdraftLimit: result.data.authorized_overdraft_limit == null ? null : toMoney(result.data.authorized_overdraft_limit),
+      overdraftFeeType: result.data.overdraft_fee_type ?? null,
+      overdraftFeeAmount: result.data.overdraft_fee_amount ?? null,
+      overdraftFeePercentage: result.data.overdraft_fee_percentage ?? null,
       limitStatus: result.data.limit_status ?? 'unknown',
       specialRulesDocumented: result.data.special_rules_documented,
       specialRulesSource: result.data.special_rules_source,
@@ -538,6 +605,9 @@ export const liveClient: ApiClient = {
       notes: result.data.notes,
       approvedCreditLimit: result.data.approved_credit_limit == null ? null : toMoney(result.data.approved_credit_limit),
       authorizedOverdraftLimit: result.data.authorized_overdraft_limit == null ? null : toMoney(result.data.authorized_overdraft_limit),
+      overdraftFeeType: result.data.overdraft_fee_type ?? null,
+      overdraftFeeAmount: result.data.overdraft_fee_amount ?? null,
+      overdraftFeePercentage: result.data.overdraft_fee_percentage ?? null,
       limitStatus: result.data.limit_status ?? 'unknown',
       specialRulesDocumented: result.data.special_rules_documented,
       specialRulesSource: result.data.special_rules_source,
@@ -547,6 +617,34 @@ export const liveClient: ApiClient = {
       frequency: result.data.frequency,
       dueDate: displayDate(result.data.next_due_date),
       status: 'Programado',
+    };
+  },
+
+  async pauseCommitment(commitmentId: string) {
+    const result = await request<Envelope<CommitmentResponse & { frequency: string; next_due_date: string }>>(`/commitments/${encodeURIComponent(commitmentId)}/pause`, { method: 'POST' });
+    return {
+      id: String(result.data.id),
+      name: result.data.name ?? 'Compromiso',
+      type: result.data.type ?? 'other',
+      amount: toMoney(result.data.amount),
+      frequency: result.data.frequency,
+      dueDate: displayDate(result.data.next_due_date),
+      status: 'Archivado',
+      isActive: false,
+    };
+  },
+
+  async resumeCommitment(commitmentId: string) {
+    const result = await request<Envelope<CommitmentResponse & { frequency: string; next_due_date: string }>>(`/commitments/${encodeURIComponent(commitmentId)}/resume`, { method: 'POST' });
+    return {
+      id: String(result.data.id),
+      name: result.data.name ?? 'Compromiso',
+      type: result.data.type ?? 'other',
+      amount: toMoney(result.data.amount),
+      frequency: result.data.frequency,
+      dueDate: displayDate(result.data.next_due_date),
+      status: 'Activo',
+      isActive: true,
     };
   },
 
@@ -737,7 +835,24 @@ export const liveClient: ApiClient = {
 
   async listDebts() {
     const result = await request<{ data: Array<{
-      id: number; account: string; kind: string; outstanding: string; minimum: string | null; minimum_confirmed: boolean; due_date: string | null;
+      id: number;
+      account: string;
+      kind: string;
+      outstanding: string;
+      minimum: string | null;
+      minimum_confirmed: boolean;
+      due_date: string | null;
+      last_four: string | null;
+      approved_credit_limit: string | null;
+      authorized_overdraft_limit: string | null;
+      limit_status: 'unknown' | 'confirmed' | 'pending_verification' | 'special_rules';
+      special_rules_documented: boolean;
+      special_rules_source: string | null;
+      special_rules_reference: string | null;
+      commitment_id: number | null;
+      account_id: number | null;
+      term_months: number | null;
+      amortization_type: string | null;
     }> }>('/debts');
     return result.data.map((item): DebtRecord => ({
       id: String(item.id),
@@ -745,6 +860,30 @@ export const liveClient: ApiClient = {
       kind: item.kind,
       outstanding: toMoney(item.outstanding),
       minimum: item.minimum === null ? null : toMoney(item.minimum),
+      minimumConfirmed: item.minimum_confirmed,
+      lastFour: item.last_four,
+      approvedCreditLimit: item.approved_credit_limit === null ? null : toMoney(item.approved_credit_limit),
+      authorizedOverdraftLimit: item.authorized_overdraft_limit === null ? null : toMoney(item.authorized_overdraft_limit),
+      limitStatus: item.limit_status,
+      specialRulesDocumented: item.special_rules_documented,
+      specialRulesSource: item.special_rules_source,
+      specialRulesReference: item.special_rules_reference,
+      commitmentId: item.commitment_id == null ? null : String(item.commitment_id),
+      accountId: item.account_id == null ? null : String(item.account_id),
+      termMonths: item.term_months,
+      amortizationType: item.amortization_type,
+      dueDate: displayDate(item.due_date),
+    }));
+  },
+
+  async listDebtStatements(debtId: string) {
+    const result = await request<{ data: Array<{ id: number; statement_date: string; closing_balance: string; minimum_payment: string | null; minimum_payment_confirmed: boolean; due_date: string }> }>(`/debts/${encodeURIComponent(debtId)}/statements`);
+    return result.data.map((item) => ({
+      id: String(item.id),
+      statementDate: displayDate(item.statement_date),
+      closingBalance: toMoney(item.closing_balance),
+      minimumPayment: item.minimum_payment === null ? null : toMoney(item.minimum_payment),
+      minimumPaymentConfirmed: item.minimum_payment_confirmed,
       dueDate: displayDate(item.due_date),
     }));
   },
@@ -799,6 +938,9 @@ export const liveClient: ApiClient = {
       available_credit: string;
       available_overdraft: string;
       uses_overdraft: boolean;
+      approved_limit: string;
+      authorized_overdraft_limit: string;
+      projected_overdraft: string;
       fee: string;
       tax: string;
       total_fee: string;
@@ -831,13 +973,14 @@ export const liveClient: ApiClient = {
   async listCalendar(from, to) {
     const params = new URLSearchParams({ from, to });
     const result = await request<{ events: Array<{
-      event: string; date: string; amount: string | null; type: string;
+      event: string; date: string; amount: string | null; type: string; commitment_id?: number;
     }> }>(`/calendar?${params.toString()}`);
     return result.events.map((item): CalendarEvent => ({
       event: item.event,
       date: displayDate(item.date, false),
       amount: item.amount === null ? 'Por confirmar' : toMoney(item.amount),
       type: item.type === 'income' ? 'Ingreso' : item.type === 'commitment' ? 'Compromiso' : 'Deuda',
+      commitmentId: item.commitment_id == null ? undefined : String(item.commitment_id),
     }));
   },
 
@@ -904,45 +1047,6 @@ export const liveClient: ApiClient = {
     await request<{ data: { cleared: boolean } }>('/chat/messages', { method: 'DELETE' });
   },
 
-  async listCatalogInstitutions(q?: string, type?: string) {
-    const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (type) params.set('type', type);
-    const queryStr = params.toString() ? `?${params.toString()}` : '';
-    const result = await request<{ data: CatalogInstitution[] }>(`/catalog/institutions${queryStr}`);
-    return result.data;
-  },
-
-  async listCatalogCategories() {
-    const result = await request<{ data: CatalogCategory[] }>('/catalog/categories');
-    return result.data;
-  },
-
-  async listCatalogProducts(institutionId?: string, category?: string, q?: string) {
-    const params = new URLSearchParams();
-    if (institutionId) params.set('institution_id', institutionId);
-    if (category) params.set('category', category);
-    if (q) params.set('q', q);
-    const queryStr = params.toString() ? `?${params.toString()}` : '';
-    const result = await request<{ data: CatalogProduct[] }>(`/catalog/products${queryStr}`);
-    return result.data;
-  },
-
-  async listCatalogVariants(productId: string) {
-    const result = await request<{ data: CatalogProductVariant[] }>(`/catalog/variants?product_id=${encodeURIComponent(productId)}`);
-    return result.data;
-  },
-
-  async listFinancialTariffs(status?: string) {
-    const query = status ? `?status=${encodeURIComponent(status)}` : '';
-    const result = await request<{ data: unknown[] }>(`/catalog/tariffs${query}`);
-    return result.data;
-  },
-
-  async listFinancialTariffSyncLogs() {
-    const result = await request<{ data: unknown[] }>('/catalog/sync-logs');
-    return result.data;
-  },
 
   async listBudgets(yearMonth?: string) {
     const query = yearMonth ? `?year_month=${encodeURIComponent(yearMonth)}` : '';
@@ -1020,14 +1124,6 @@ export const liveClient: ApiClient = {
     const result = await request<{ data: ImportedTransaction }>(`/imports/${encodeURIComponent(importId)}`, {
       method: 'PATCH',
       body: jsonBody({ status }),
-    });
-    return result.data;
-  },
-
-  async linkCatalogProduct(input) {
-    const result = await request<{ data: { linked: boolean } }>('/catalog/link', {
-      method: 'POST',
-      body: jsonBody(input),
     });
     return result.data;
   },

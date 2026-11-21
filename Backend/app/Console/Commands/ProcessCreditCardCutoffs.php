@@ -9,9 +9,11 @@ use App\Models\CreditCardStatement;
 use App\Models\Debt;
 use App\Models\DebtBalanceMovement;
 use App\Services\DebtBalanceLedger;
+use App\Support\CreditCardCycleDates;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ProcessCreditCardCutoffs extends Command
 {
@@ -122,7 +124,31 @@ class ProcessCreditCardCutoffs extends Command
                                 ->first();
 
                             if (!$statement) {
-                                $dueDate = $cutoffDate->copy()->addDays((int) ($card->payment_grace_days ?? 21));
+                                // Fee is assessed once per statement cycle, before the closing balance is saved.
+                                // Legacy entry-triggered fee modes are intentionally not charged again here.
+                                $fee = $this->calculateCutoffOverdraftFee($card, $debt, $cutoffDate, $statementBalance);
+                                if (bccomp($fee, '0.00', 2) > 0) {
+                                    $eventKey = 'cutoff-overdraft:' . $card->id . ':' . $cutoffDate->toDateString();
+                                    $exists = DebtBalanceMovement::query()
+                                        ->where('debt_id', $debt->id)
+                                        ->where('idempotency_key', $eventKey)
+                                        ->exists();
+                                    if (!$exists) {
+                                        DebtBalanceMovement::query()->create([
+                                            'user_id' => $card->user_id,
+                                            'debt_id' => $debt->id,
+                                            'account_id' => $account->id,
+                                            'kind' => 'overdraft_fee',
+                                            'delta' => $fee,
+                                            'description' => 'Cargo por sobregiro al corte ' . $cutoffDate->toDateString(),
+                                            'occurred_at' => $cutoffEnd,
+                                            'idempotency_key' => $eventKey,
+                                        ]);
+                                        $statementBalance = bcadd($statementBalance, $fee, 2);
+                                        $currentBalance = bcadd($currentBalance, $fee, 2);
+                                    }
+                                }
+                                $dueDate = $cutoffDate->copy()->addDays((int) $card->payment_grace_days);
                                 $statement = CreditCardStatement::query()->create([
                                     'user_id' => $card->user_id,
                                     'commitment_id' => $card->id,
@@ -167,6 +193,63 @@ class ProcessCreditCardCutoffs extends Command
 
         $this->info('Credit card cut-offs processed successfully.');
         return self::SUCCESS;
+    }
+
+    /**
+     * Calculates a fee from the bank conditions entered by the user.
+     * cutoff_daily uses annual simple interest on the end-of-day overdraft
+     * during the billing period (ACT/365), not on the authorized limit.
+     */
+    private function calculateCutoffOverdraftFee(Commitment $card, Debt $debt, Carbon $cutoff, string $closingBalance): string
+    {
+        $mode = (string) ($card->overdraft_fee_type ?? 'none');
+        if (!in_array($mode, ['cutoff_fixed', 'cutoff_percentage', 'cutoff_both', 'cutoff_daily'], true)) {
+            return '0.00';
+        }
+        if ($card->approved_credit_limit === null) {
+            return '0.00';
+        }
+        $limit = (string) $card->approved_credit_limit;
+        $fixed = (string) ($card->overdraft_fee_amount ?? '0.00');
+        $rate = (string) ($card->overdraft_fee_percentage ?? '0.00');
+        $excess = bcsub($closingBalance, $limit, 2);
+        if ($mode !== 'cutoff_daily') {
+            if (bccomp($excess, '0.00', 2) <= 0) {
+                return '0.00';
+            }
+            $percentage = bcmul($excess, bcdiv($rate, '100', 8), 2);
+            return match ($mode) {
+                'cutoff_fixed' => $fixed,
+                'cutoff_percentage' => $percentage,
+                'cutoff_both' => bcadd($fixed, $percentage, 2),
+            };
+        }
+        // Start after the previous monthly cutoff; do not charge prior days.
+        $prior = $cutoff->copy()->subMonthNoOverflow()->startOfMonth();
+        $prior->day(min((int) $card->statement_day, $prior->daysInMonth));
+        $movements = DebtBalanceMovement::query()
+            ->where('debt_id', $debt->id)
+            ->where('occurred_at', '<=', $cutoff->copy()->endOfDay())
+            ->orderBy('occurred_at')->orderBy('id')->get();
+        $day = $prior->copy()->addDay()->startOfDay();
+        $interest = '0.00000000';
+        $balance = '0.00';
+        $idx = 0;
+        $count = $movements->count();
+        while ($day->lte($cutoff)) {
+            $end = $day->copy()->endOfDay();
+            while ($idx < $count && $movements[$idx]->occurred_at->lte($end)) {
+                $balance = bcadd($balance, (string) $movements[$idx]->delta, 2);
+                $idx++;
+            }
+            $excessForDay = bcsub($balance, $limit, 2);
+            if (bccomp($excessForDay, '0.00', 2) > 0) {
+                $daily = bcdiv(bcmul($excessForDay, bcdiv($rate, '100', 8), 8), '365', 8);
+                $interest = bcadd($interest, $daily, 8);
+            }
+            $day->addDay();
+        }
+        return number_format(round((float) $interest, 2), 2, '.', '');
     }
 
     private function syncPaymentOccurrence(Commitment $card, CreditCardStatement $statement): void

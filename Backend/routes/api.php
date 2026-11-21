@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\BudgetReserveController;
 use App\Http\Controllers\Api\V1\StatementImportController;
 use App\Http\Controllers\Api\V1\PaymentPriorityController;
+use App\Http\Controllers\Api\V1\FinancialPlanController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -66,6 +67,8 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::post('/commitments', [CommitmentController::class, 'store'])->name('commitments.store');
     Route::put('/commitments/{commitment}', [CommitmentController::class, 'update'])->whereNumber('commitment')->name('commitments.update');
     Route::delete('/commitments/{commitment}', [CommitmentController::class, 'destroy'])->whereNumber('commitment')->name('commitments.destroy');
+    Route::post('/commitments/{commitment}/pause', [CommitmentController::class, 'pause'])->whereNumber('commitment')->name('commitments.pause');
+    Route::post('/commitments/{commitment}/resume', [CommitmentController::class, 'resume'])->whereNumber('commitment')->name('commitments.resume');
     Route::post('/commitments/{commitment}/occurrences/{occurrence}/payments', [CommitmentController::class, 'payment'])->whereNumber(['commitment', 'occurrence'])->name('commitments.payments.store');
     Route::post('/payments/{payment}/reversals', [PaymentReversalController::class, 'store'])->whereNumber('payment')->name('payments.reversals.store');
 
@@ -94,6 +97,7 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::post('/debts/{debt}/authorize-card', [DebtController::class, 'authorizeCardPreview'])->whereNumber('debt')->name('debts.card-authorize.preview');
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
     Route::get('/calendar/summary', [CalendarController::class, 'summary'])->name('calendar.summary');
+    Route::get('/financial-plan', [FinancialPlanController::class, 'index'])->name('financial-plan.index');
     Route::get('/priorities', [PaymentPriorityController::class, 'index'])->name('priorities.index');
     Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
     Route::get('/reports/projection', [ReportController::class, 'projection'])->name('reports.projection');
@@ -113,15 +117,6 @@ Route::prefix('v1')->name('api.v1.')->middleware('auth:sanctum')->group(function
     Route::get('/imports', [StatementImportController::class, 'index'])->name('imports.index');
     Route::post('/imports', [StatementImportController::class, 'store'])->name('imports.store');
     Route::patch('/imports/{importedTransaction}', [StatementImportController::class, 'updateStatus'])->whereNumber('importedTransaction')->name('imports.update-status');
-
-    // Financial Catalog & Tariff Sync Routes (Bloque 4 & 5)
-    Route::get('/catalog/institutions', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'institutions'])->name('catalog.institutions');
-    Route::get('/catalog/categories', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'categories'])->name('catalog.categories');
-    Route::get('/catalog/products', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'products'])->name('catalog.products');
-    Route::get('/catalog/variants', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'variants'])->name('catalog.variants');
-    Route::post('/catalog/link', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'link'])->name('catalog.link');
-    Route::get('/catalog/tariffs', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'tariffs'])->name('catalog.tariffs');
-    Route::get('/catalog/sync-logs', [\App\Http\Controllers\Api\V1\FinancialCatalogController::class, 'syncLogs'])->name('catalog.sync-logs');
 
     // Alcancía / Piggy Bank Routes
     Route::get('/piggy-bank', [\App\Http\Controllers\Api\V1\PiggyBankController::class, 'index'])->name('piggy-bank.index');

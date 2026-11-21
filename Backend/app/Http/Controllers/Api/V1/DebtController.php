@@ -203,6 +203,9 @@ class DebtController extends Controller
                 'previous_balance' => $record->outstanding_amount,
                 'projected_balance' => bcadd((string) $record->outstanding_amount, $authorization['total_charge'], 2),
                 'purchase_amount' => $validated['amount'],
+                'approved_limit' => $authorization['metrics']['approved_credit_limit'],
+                'authorized_overdraft_limit' => $authorization['metrics']['authorized_overdraft_limit'],
+                'projected_overdraft' => $authorization['metrics']['used_overdraft'],
                 'available_credit' => $authorization['metrics']['remaining_approved_credit'],
                 'available_overdraft' => $authorization['metrics']['remaining_overdraft'],
                 'uses_overdraft' => $authorization['uses_overdraft'],
@@ -361,6 +364,10 @@ class DebtController extends Controller
             'special_rules_documented' => (bool) $debt->special_rules_documented,
             'special_rules_source' => $debt->special_rules_source,
             'special_rules_reference' => $debt->special_rules_reference,
+            'commitment_id' => $debt->commitment_id,
+            'account_id' => $debt->account_id,
+            'term_months' => $debt->term_months,
+            'amortization_type' => $debt->amortization_type,
         ];
     }
 }

@@ -9,6 +9,17 @@ class StoreCommitmentRequest extends FormRequest
 {
     public function authorize(): bool { return true; }
 
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($this->input('limit_status') === 'special_rules') {
+                if (!$this->boolean('special_rules_documented') || !$this->input('special_rules_source') || !$this->input('special_rules_reference')) {
+                    $validator->errors()->add('limit_status', 'Las reglas especiales requieren documentación contractual con fuente y referencia.');
+                }
+            }
+        });
+    }
+
     public function rules(): array
     {
         $type = $this->input('type');
@@ -23,17 +34,29 @@ class StoreCommitmentRequest extends FormRequest
                 'statement_day' => ['required', 'integer', 'between:1,31'],
                 'payment_grace_days' => ['required', 'integer', 'between:1,31'],
                 'statement_balance' => ['nullable', 'numeric', 'min:0'],
+                'interest_rate' => ['nullable', 'numeric', 'between:0,100'],
                 'minimum_payment' => ['nullable', 'numeric', 'gte:0'],
                 'credit_limit' => ['nullable', 'numeric', 'min:0'],
                 'approved_credit_limit' => ['nullable', 'numeric', 'min:0'],
                 'authorized_overdraft_limit' => ['nullable', 'numeric', 'min:0'],
                 'limit_status' => ['nullable', 'in:unknown,confirmed,pending_verification,special_rules'],
                 'special_rules_documented' => ['nullable', 'boolean'],
-                'special_rules_source' => ['nullable', 'string', 'max:2048'],
-                'special_rules_reference' => ['nullable', 'string', 'max:255'],
-                'financial_institution_id' => ['nullable', 'integer', 'exists:financial_institutions,id'],
-                'financial_product_variant_id' => ['nullable', 'integer', 'exists:financial_product_variants,id'],
-                'overdraft_fee_type' => ['nullable', 'string', 'in:none,fixed,percentage'],
+                'special_rules_source' => ['nullable', 'string', 'max:500'],
+                'special_rules_reference' => ['nullable', 'string', 'max:160'],
+                'card_product_name' => ['nullable', 'string', 'max:160'],
+                'card_variant' => ['nullable', 'string', 'max:160'],
+                'card_network' => ['nullable', 'string', 'in:Visa,Mastercard,Amex,Discover,Otra'],
+                'card_currency' => ['nullable', 'string', 'in:DOP,USD,EUR'],
+                'issued_at' => ['nullable', 'date'],
+                'annual_fee' => ['nullable', 'numeric', 'min:0'],
+                'replacement_fee' => ['nullable', 'numeric', 'min:0'],
+                'cash_advance_fee' => ['nullable', 'numeric', 'min:0'],
+                'late_fee' => ['nullable', 'numeric', 'min:0'],
+                'card_benefits' => ['nullable', 'array'],
+                'card_benefits.*' => ['string', 'max:255'],
+                'card_payment_methods' => ['nullable', 'array'],
+                'card_payment_methods.*' => ['string', 'max:255'],
+                'overdraft_fee_type' => ['nullable', 'string', 'in:none,fixed,percentage,cutoff_fixed,cutoff_percentage,cutoff_both,cutoff_daily'],
                 'overdraft_fee_amount' => ['nullable', 'numeric', 'min:0'],
                 'overdraft_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
                 'overdraft_fee_tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -69,11 +92,11 @@ class StoreCommitmentRequest extends FormRequest
                 'string',
                 'max:80',
             ],
-            'maturity_date' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'date', 'after_or_equal:next_due_date'],
+            'maturity_date' => [Rule::requiredIf($requiresLoanDetails), 'nullable', 'date'],
             'credit_limit' => ['nullable', 'numeric', 'min:0'],
             'approved_credit_limit' => ['nullable', 'numeric', 'min:0'],
             'authorized_overdraft_limit' => ['nullable', 'numeric', 'min:0'],
-            'overdraft_fee_type' => ['nullable', 'string', 'in:none,fixed,percentage'],
+            'overdraft_fee_type' => ['nullable', 'string', 'in:none,fixed,percentage,cutoff_fixed,cutoff_percentage,cutoff_both,cutoff_daily'],
             'overdraft_fee_amount' => ['nullable', 'numeric', 'min:0'],
             'overdraft_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'overdraft_fee_tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],

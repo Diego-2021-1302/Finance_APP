@@ -69,6 +69,211 @@ class FinancialFlowTest extends TestCase
         $this->assertEquals('25000.00', $receiptResponse->json('data.amount'));
     }
 
+    public function test_commitment_list_returns_unique_active_inactive_and_filtered_records(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        Commitment::query()->create([
+            'user_id' => $user->id,
+            'name' => 'Internet Hogar',
+            'type' => 'utility',
+            'institution' => 'Claro',
+            'amount' => '2450.00',
+            'frequency' => 'monthly',
+            'next_due_date' => now()->addDays(3)->toDateString(),
+            'is_active' => true,
+        ]);
+        Commitment::query()->create([
+            'user_id' => $user->id,
+            'name' => 'Seguro archivado',
+            'type' => 'insurance',
+            'institution' => 'ARS Universal',
+            'amount' => '6800.00',
+            'frequency' => 'monthly',
+            'next_due_date' => now()->subMonth()->toDateString(),
+            'is_active' => false,
+        ]);
+
+        $active = $this->withToken($token)->getJson('/api/v1/commitments?status=active&type=utility&search=internet');
+        $active->assertOk()
+            ->assertJsonCount(1, 'commitments')
+            ->assertJsonPath('commitments.0.name', 'Internet Hogar')
+            ->assertJsonPath('commitments.0.is_active', true)
+            ->assertJsonStructure(['summary', 'meta']);
+
+        $inactive = $this->withToken($token)->getJson('/api/v1/commitments?status=inactive');
+        $inactive->assertOk()
+            ->assertJsonCount(1, 'commitments')
+            ->assertJsonPath('commitments.0.name', 'Seguro archivado')
+            ->assertJsonPath('commitments.0.is_active', false);
+    }
+
+    public function test_card_unknown_limit_remains_null_during_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $create = $this->withToken($token)->postJson('/api/v1/commitments', [
+            'name' => 'Tarjeta sin verificar',
+            'type' => 'credit_card',
+            'reference_number' => '4321',
+            'institution' => 'Banco Popular',
+            'current_balance' => '12500.00',
+            'statement_day' => 15,
+            'payment_grace_days' => 21,
+            'approved_credit_limit' => null,
+            'authorized_overdraft_limit' => null,
+            'limit_status' => 'unknown',
+        ]);
+
+        $create->assertCreated()
+            ->assertJsonPath('data.approved_credit_limit', null)
+            ->assertJsonPath('data.limit_status', 'unknown');
+
+        $commitmentId = $create->json('data.id');
+        $update = $this->withToken($token)->putJson("/api/v1/commitments/{$commitmentId}", [
+            'name' => 'Tarjeta sin verificar actualizada',
+            'type' => 'credit_card',
+            'reference_number' => '4321',
+            'institution' => 'Banco Popular',
+            'current_balance' => '12500.00',
+            'statement_day' => 15,
+            'payment_grace_days' => 21,
+            'approved_credit_limit' => null,
+            'authorized_overdraft_limit' => null,
+            'limit_status' => 'unknown',
+        ]);
+
+        $update->assertOk()
+            ->assertJsonPath('data.approved_credit_limit', null)
+            ->assertJsonPath('data.authorized_overdraft_limit', '0.00')
+            ->assertJsonPath('data.limit_status', 'unknown');
+    }
+
+    public function test_manual_credit_card_stores_complete_manual_product_details(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/commitments', [
+            'name' => 'Visa Manual',
+            'type' => 'credit_card',
+            'reference_number' => '4321',
+            'institution' => 'Banco Popular',
+            'current_balance' => '12500.00',
+            'statement_balance' => '12500.00',
+            'statement_day' => 15,
+            'payment_grace_days' => 21,
+            'approved_credit_limit' => '50000.00',
+            'authorized_overdraft_limit' => '10000.00',
+            'limit_status' => 'confirmed',
+            'card_product_name' => 'Visa Gold',
+            'card_variant' => 'Gold',
+            'card_network' => 'Visa',
+            'card_currency' => 'DOP',
+            'issued_at' => '2026-01-15',
+            'annual_fee' => '8500.00',
+            'replacement_fee' => '600.00',
+            'cash_advance_fee' => '1000.00',
+            'late_fee' => '700.00',
+            'card_benefits' => ['Seguro de viaje', 'Acceso a promociones'],
+            'card_payment_methods' => ['Cuenta Popular', 'Banca móvil', 'Caja'],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.card_product_name', 'Visa Gold')
+            ->assertJsonPath('data.card_variant', 'Gold')
+            ->assertJsonPath('data.card_network', 'Visa')
+            ->assertJsonPath('data.card_currency', 'DOP')
+            ->assertJsonPath('data.annual_fee', '8500.00')
+            ->assertJsonPath('data.card_benefits.0', 'Seguro de viaje');
+
+        $commitment = \App\Models\Commitment::where('user_id', $user->id)->where('name', 'Visa Manual')->firstOrFail();
+        $this->assertSame('Visa Gold', $commitment->card_product_name);
+        $this->assertSame(['Seguro de viaje', 'Acceso a promociones'], $commitment->card_benefits);
+        $this->assertSame(['Cuenta Popular', 'Banca móvil', 'Caja'], $commitment->card_payment_methods);
+
+        $this->assertSame('Visa Gold', $commitment->account?->card_product_name);
+        $this->assertSame('Visa Gold', $commitment->debt?->card_product_name);
+    }
+
+    public function test_loan_commitment_detail_exposes_contractual_amortization(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $commitment = Commitment::query()->create([
+            'user_id' => $user->id,
+            'name' => 'Préstamo contractual',
+            'type' => 'loan',
+            'reference_number' => 'PREST-001',
+            'institution' => 'Banco Popular',
+            'amount' => '5000.00',
+            'frequency' => 'monthly',
+            'next_due_date' => now()->addMonth()->toDateString(),
+            'opening_balance' => '50000.00',
+            'current_balance' => '50000.00',
+            'interest_rate' => '12.000',
+            'maturity_date' => now()->addYear()->toDateString(),
+            'is_active' => true,
+        ]);
+
+        $response = $this->withToken($token)->getJson('/api/v1/commitments');
+        $response->assertOk()
+            ->assertJsonPath('commitments.0.id', $commitment->id)
+            ->assertJsonPath('commitments.0.contract_conditions.amortization_type', 'french')
+            ->assertJsonPath('commitments.0.contract_conditions.term_months', 12)
+            ->assertJsonStructure(['commitments' => [['amortization' => ['installment', 'schedule']]]]);
+
+        $this->assertNotEmpty($response->json('commitments.0.amortization.schedule'));
+    }
+
+    public function test_commitment_can_pause_resume_without_duplicate_or_historical_loss(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $commitment = Commitment::query()->create([
+            'user_id' => $user->id,
+            'name' => 'Internet mensual',
+            'type' => 'utility',
+            'amount' => '2450.00',
+            'frequency' => 'monthly',
+            'next_due_date' => now()->addMonth()->toDateString(),
+            'is_active' => true,
+        ]);
+        CommitmentOccurrence::query()->create([
+            'user_id' => $user->id,
+            'commitment_id' => $commitment->id,
+            'amount_due' => '2450.00',
+            'due_date' => now()->subMonth()->toDateString(),
+            'status' => 'paid',
+        ]);
+        CommitmentOccurrence::query()->create([
+            'user_id' => $user->id,
+            'commitment_id' => $commitment->id,
+            'amount_due' => '2450.00',
+            'due_date' => now()->addMonth()->toDateString(),
+            'status' => 'scheduled',
+        ]);
+
+        $pause = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/pause");
+        $pause->assertOk()->assertJsonPath('data.is_active', false);
+
+        $this->assertDatabaseCount('commitment_occurrences', 1);
+        $this->assertDatabaseHas('commitment_occurrences', [
+            'commitment_id' => $commitment->id,
+            'status' => 'paid',
+        ]);
+
+        $resume = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/resume");
+        $resume->assertOk()->assertJsonPath('data.is_active', true);
+
+        $this->assertDatabaseCount('commitment_occurrences', 2);
+        $this->assertDatabaseCount('commitment_occurrences', 2);
+    }
+
     public function test_commitment_recurrence_generation_and_partial_payment(): void
     {
         $user = User::factory()->create();

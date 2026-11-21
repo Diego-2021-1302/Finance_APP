@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\Commitment;
 use App\Models\Debt;
-use App\Models\FinancialTariffRecord;
 use Illuminate\Support\Carbon;
 
 class FinancialProductEngine
@@ -15,7 +14,7 @@ class FinancialProductEngine
      * 1. Individual User Contract Overrides (explicit properties on entity)
      * 2. Active Promotional Rate / Exemption (if promo_until_date >= operation_date)
      * 3. Linked Product Variant (FinancialProductVariant)
-     * 4. Latest Active Verified Tariff Record (FinancialTariffRecord)
+     * 4. Valores manuales individuales del producto financiero
      */
     public function resolveApplicableConditions(Debt|Commitment|Account $entity, ?string $operationDate = null): array
     {
@@ -29,26 +28,6 @@ class FinancialProductEngine
             $promoRate = (string) $entity->promo_interest_rate;
         }
 
-        // 2. Fetch linked variant or verified tariff record
-        $variant = $entity->relationLoaded('variant') ? $entity->variant : null;
-        if (!$variant && $entity->financial_product_variant_id) {
-            $variant = \App\Models\FinancialProductVariant::find($entity->financial_product_variant_id);
-        }
-
-        $tariffRecord = null;
-        if ($entity->financial_institution_id) {
-            $tariffRecord = FinancialTariffRecord::query()
-                ->where('financial_institution_id', $entity->financial_institution_id)
-                ->where('is_active', true)
-                ->where('verification_status', 'verified')
-                ->where('effective_from', '<=', $opDate->toDateString())
-                ->where(function ($q) use ($opDate) {
-                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', $opDate->toDateString());
-                })
-                ->orderByDesc('version')
-                ->first();
-        }
-
         // Resolve Annual Interest Rate
         $rateSource = 'Individual User Contract';
         $resolvedRate = '0.00';
@@ -59,34 +38,24 @@ class FinancialProductEngine
         } elseif ($entity->interest_rate !== null && bccomp((string) $entity->interest_rate, '0.00', 3) > 0) {
             $resolvedRate = (string) $entity->interest_rate;
             $rateSource = 'Tasa individual en contrato';
-        } elseif ($variant && $variant->annual_interest_rate !== null) {
-            $resolvedRate = (string) $variant->annual_interest_rate;
-            $rateSource = sprintf('Variante del catálogo: %s', $variant->variant_name);
-        } elseif ($tariffRecord) {
-            $resolvedRate = (string) $tariffRecord->value;
-            $rateSource = sprintf('Tarifario oficial v%d de %s', $tariffRecord->version, $tariffRecord->published_at?->toDateString() ?? 'SB-RD');
         }
 
         // Resolve Overdraft Fee Rules
         $feeSource = 'Contrato individual';
-        $resolvedFeeType = $entity->overdraft_fee_type ?? $variant?->overdraft_fee_type ?? $tariffRecord?->fee_type ?? 'none';
-        $resolvedFeeAmount = (string) ($entity->overdraft_fee_amount ?? $variant?->overdraft_fee_amount ?? '0.00');
-        $resolvedFeePct = (string) ($entity->overdraft_fee_percentage ?? $variant?->overdraft_fee_percentage ?? '0.00');
-        $resolvedTaxRate = (string) ($entity->overdraft_fee_tax_rate ?? $variant?->overdraft_fee_tax_rate ?? '0.00');
-
-        if ($variant) {
-            $feeSource = sprintf('Variante de catálogo (%s)', $variant->variant_name);
-        }
+        $resolvedFeeType = $entity->overdraft_fee_type ?? 'none';
+        $resolvedFeeAmount = (string) ($entity->overdraft_fee_amount ?? '0.00');
+        $resolvedFeePct = (string) ($entity->overdraft_fee_percentage ?? '0.00');
+        $resolvedTaxRate = (string) ($entity->overdraft_fee_tax_rate ?? '0.00');
 
         // Resolve Amortization & Other Charges
-        $resolvedAmortType = $entity->amortization_type ?? $variant?->amortization_type ?? 'french';
-        $resolvedTermMonths = $entity->term_months ?? $variant?->term_months ?? 12;
-        $resolvedAdvanceRate = (string) ($entity->cash_advance_interest_rate ?? $variant?->cash_advance_interest_rate ?? $resolvedRate);
-        $resolvedMoraRate = (string) ($entity->moratorium_interest_rate ?? $variant?->moratorium_interest_rate ?? '0.00');
-        $resolvedMembership = (string) ($entity->membership_fee_amount ?? $variant?->membership_fee_amount ?? '0.00');
-        $resolvedInsurance = (string) ($entity->insurance_fee_amount ?? $variant?->insurance_fee_amount ?? '0.00');
-        $resolvedLatePct = (string) ($entity->late_fee_percentage ?? $variant?->late_fee_percentage ?? '0.00');
-        $resolvedLateFixed = (string) ($entity->late_fee_fixed ?? $variant?->late_fee_fixed ?? '0.00');
+        $resolvedAmortType = $entity->amortization_type ?? 'french';
+        $resolvedTermMonths = $entity->term_months ?? 12;
+        $resolvedAdvanceRate = (string) ($entity->cash_advance_interest_rate ?? $resolvedRate);
+        $resolvedMoraRate = (string) ($entity->moratorium_interest_rate ?? '0.00');
+        $resolvedMembership = (string) ($entity->membership_fee_amount ?? '0.00');
+        $resolvedInsurance = (string) ($entity->insurance_fee_amount ?? '0.00');
+        $resolvedLatePct = (string) ($entity->late_fee_percentage ?? '0.00');
+        $resolvedLateFixed = (string) ($entity->late_fee_fixed ?? '0.00');
 
         return [
             'annual_interest_rate' => $resolvedRate,
@@ -107,7 +76,7 @@ class FinancialProductEngine
                 'rate_source' => $rateSource,
                 'fee_source' => $feeSource,
                 'rule_used' => sprintf('Jerarquía de resolución: %s (Tasa %s%%)', $rateSource, $resolvedRate),
-                'verified_official_source' => $tariffRecord?->official_source_url ?? $variant?->product?->official_source,
+                'verified_official_source' => null,
             ],
         ];
     }

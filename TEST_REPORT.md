@@ -1,36 +1,50 @@
 # INFORME DE PRUEBAS AUTOMATIZADAS — FINANCE APP 2.0
 
-**Fecha de Ejecución:** 17 de Noviembre, 2026  
-**Resultado Global:** PASS (100% Exitoso)  
+**Fecha de Ejecución:** 20 de Noviembre, 2026
+**Resultado Global:** PASS para las suites ejecutadas
+
+## Ejecución final del plan Compromisos
+
+- Backend: **87 pruebas aprobadas, 446 aserciones** mediante `php artisan test`.
+- Frontend: **10 pruebas aprobadas** mediante `npm test`.
+- Producción: build TypeScript/Vite completado mediante `npm run build`.
+- Recorrido maestro: **35 escenarios cubiertos por 1 prueba con 12 aserciones** mediante `php artisan test --filter=GhostFinanceMasterIntegrationTest`.
+- Migraciones: todas las migraciones registradas están aplicadas; no hay pendientes.
+- Diagnósticos: sin errores en las rutas, aplicación backend y archivos frontend revisados.
+
+No se declara aprobado un recorrido Playwright o una verificación manual de navegador, pues no fue ejecutado en esta sesión.
 
 ---
 
-## 1. PRUEBAS DE BACKEND (PHPUnit / Pest)
+## 1. PRUEBAS DE BACKEND (PHPUnit)
 
-- **Total de pruebas backend:** 19 pasadas
-- **Total de aserciones:** 60 verificadas
-- **Tiempo de ejecución:** ~14.0 segundos
+- **Total de pruebas backend:** 87 pasadas.
+- **Total de aserciones:** 446 verificadas.
+- **Tiempo de ejecución:** aproximadamente 39 segundos.
 
-### Cobertura de Pruebas Destacadas:
-1. `AccountMovementTest::test_user_can_create_savings_checking_and_cash_accounts`: Verificación de creación de cuentas de ahorro, corriente y efectivo con saldos iniciales en el libro mayor.
-2. `AccountMovementTest::test_user_can_record_direct_expense`: Registro de gasto ocasional afectando la cuenta correspondiente.
-3. `AccountMovementTest::test_internal_transfer_does_not_alter_total_user_wealth`: Comprobación de que una transferencia interna de $3,000 entre cuentas del mismo usuario no altera el patrimonio neto total.
-4. `RecurrenceDateTest::test_recurrence_preserves_original_base_day_across_short_months`: Comprobación del algoritmo de fechas conservando el día 31 a través de febrero y marzo.
-5. `ChatTest::test_authenticated_user_can_get_and_send_chat_messages`: Pruebas de mensajería con el Asistente IA.
-6. `ChatTest::test_ai_interactive_form_filling_and_confirmation_flow_for_income`: Pruebas del flujo interactivo de recolección de datos y confirmación pre-guardado.
-7. `ChatTest::test_ai_provides_personalized_financial_opinion_when_asked`: Verificación de diagnóstico financiero personalizado basado en datos reales del usuario.
-8. `FinancialFlowTest::test_user_can_register_and_create_account_and_income_receipt`: Flujo completo de autenticación, creación de cuenta y cobro de ingreso.
-9. `FinancialFlowTest::test_commitment_recurrence_generation_and_partial_payment`: Generación de recurrencias y abonos parciales a compromisos.
-
----
+### Cobertura destacada:
+- Cuentas, ingresos, gastos y transferencias.
+- Compromisos, recurrencias y pagos parciales.
+- Tarjetas, sobregiros, estados de cuenta y capacidad autorizada.
+- Préstamos y amortización contractual.
+- Catálogo financiero y sincronización de tarifas.
+- Reversiones e idempotencia.
+- Calendario, dashboard y reportes.
+- Aislamiento entre usuarios y seguridad.
+- Módulo Alcancía.
 
 ## 2. PRUEBAS DE FRONTEND (Vitest)
 
-- **Total de pruebas frontend:** 6 pasadas
-- **Tiempo de ejecución:** ~1.3 segundos
+- **Total de pruebas frontend:** 10 pasadas.
+- **Tiempo de ejecución:** aproximadamente 0.5 segundos.
 
-### Cobertura de Pruebas:
-- `client.test.ts`: Persistencia de tokens de sesión Sanctum, llamadas a API de ingresos, historial de deudas, análisis Gemini y mensajería de chat.
-- `uuid.test.ts`: Generación de UUID v4 criptográficamente seguro para idempotencia sin dependencias externas.
+### Cobertura destacada:
+- Persistencia de sesión y API autenticada.
+- Cliente HTTP y manejo de respuestas inválidas.
+- Historial de deudas y análisis financiero.
+- Mensajería del asistente.
+- Pausa y reanudación de compromisos.
+- Límites desconocidos enviados como `null`.
+- Catálogo bancario ampliado y clasificación de productos/variantes verificadas.
 
 ---
