@@ -70,11 +70,16 @@ self.addEventListener('fetch', (event) => {
         });
 
         return response;
-      }).catch(() => {
-        // Fallback for HTML pages when offline
+      }).catch(async () => {
         if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('/index.html');
+          const offlinePage = await caches.match('/index.html');
+          if (offlinePage) return offlinePage;
         }
+
+        return new Response('Sin conexión. Verifica tu conectividad e inténtalo de nuevo.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
       });
     })
   );
