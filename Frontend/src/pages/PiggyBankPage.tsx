@@ -4,7 +4,7 @@ import {
   Button, Card, Caption1, Dialog, DialogSurface, DialogBody, DialogTitle,
   DialogContent, DialogActions, Field, Input, MessageBar, MessageBarBody,
 } from '@fluentui/react-components';
-import { DeleteRegular, SparkleRegular } from '@fluentui/react-icons';
+import { SparkleRegular } from '@fluentui/react-icons';
 import { api } from '../api';
 import { LoadingState, ErrorState } from '../components/DataState';
 import type { PiggyBankCalendarDay } from '../types';
