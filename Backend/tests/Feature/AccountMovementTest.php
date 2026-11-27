@@ -78,6 +78,54 @@ class AccountMovementTest extends TestCase
         $this->assertDatabaseMissing('accounts', ['id' => $account->id]);
     }
 
+    public function test_credit_card_account_is_read_only_from_accounts_endpoints(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $user->id,
+            'name' => 'Visa vinculada',
+            'type' => 'credit_card',
+            'currency' => 'DOP',
+            'is_active' => true,
+        ]);
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $this->withToken($token)->putJson("/api/v1/accounts/{$account->id}", [
+            'name' => 'Visa editada',
+            'institution' => 'Banco Popular',
+            'type' => 'checking',
+        ])->assertUnprocessable();
+
+        $this->withToken($token)->deleteJson("/api/v1/accounts/{$account->id}")->assertUnprocessable();
+        $this->withToken($token)->postJson("/api/v1/accounts/{$account->id}/archive")->assertUnprocessable();
+        $this->withToken($token)->postJson("/api/v1/accounts/{$account->id}/deposit", [
+            'amount' => '100.00',
+            'description' => 'Depósito manual',
+            'occurred_at' => now()->toDateString(),
+        ])->assertUnprocessable();
+        $this->withToken($token)->postJson("/api/v1/accounts/{$account->id}/reconcile", [
+            'target_balance' => '100.00',
+            'reason' => 'Ajuste manual',
+        ])->assertUnprocessable();
+        $this->withToken($token)->postJson('/api/v1/accounts', [
+            'name' => 'Tarjeta huérfana',
+            'type' => 'credit_card',
+            'currency' => 'DOP',
+            'opening_balance' => '0.00',
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseHas('accounts', [
+            'id' => $account->id,
+            'name' => 'Visa vinculada',
+            'type' => 'credit_card',
+            'is_active' => true,
+        ]);
+        $this->assertDatabaseMissing('transactions', [
+            'account_id' => $account->id,
+            'kind' => 'account_deposit',
+        ]);
+    }
+
     public function test_user_can_record_direct_expense(): void
     {
         $user = User::factory()->create();

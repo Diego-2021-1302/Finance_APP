@@ -2,7 +2,7 @@ import type {
   AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, DebtStatementRecord, ExpenseRecord, FinanceInsights,
   IncomeRecord, Preferences, TransactionRecord, TransferRecord, User, ChatMessageItem,
   Budget, Reserve, ImportedTransaction,
-  PiggyBankData, FinancialPlan,
+  PiggyBankData, FinancialPlan, InterestCutReport,
 } from '../types';
 
 export interface ApiClient {
@@ -11,11 +11,13 @@ export interface ApiClient {
   logout(): Promise<void>;
   createAccount(input: { name: string; email: string; password: string }): Promise<User>;
   getDashboardSummary(): Promise<DashboardSummary>;
+  getDebtHistory(): Promise<Array<import('../types').DebtHistoryPoint>>;
   getDebtBalanceHistory(): Promise<DebtBalancePoint[]>;
   getFinanceInsights(): Promise<FinanceInsights>;
   getFinancialPlan(days?: number): Promise<FinancialPlan>;
+  getInterestCut(): Promise<InterestCutReport>;
   listIncomes(): Promise<IncomeRecord[]>;
-  createIncome(input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
+  createIncome(input: { source: string; amount: string; expected_date: string; frequency?: string; recurrence_day?: number; recurrence_second_day?: number }): Promise<IncomeRecord>;
   updateIncome(incomeId: string, input: { source: string; amount: string; expected_date: string }): Promise<IncomeRecord>;
   deleteIncome(incomeId: string): Promise<{ message: string }>;
   recordReceipt(incomeId: string, input: { amount: string; account_id: string; received_at: string; idempotency_key: string }): Promise<{ amount: string; balance: string }>;
@@ -30,6 +32,7 @@ export interface ApiClient {
     institution?: string | null;
     current_balance?: string | null;
     statement_balance?: string | null;
+    card_payment_mode?: 'minimum' | 'statement';
     minimum_payment?: string | null;
     statement_day?: number | null;
     payment_grace_days?: number | null;
@@ -68,6 +71,8 @@ export interface ApiClient {
     institution?: string | null;
     current_balance?: string | null;
     statement_balance?: string | null;
+    card_payment_mode?: 'minimum' | 'statement';
+    minimum_payment?: string | null;
     statement_day?: number | null;
     payment_grace_days?: number | null;
     interest_rate?: string | null;
@@ -96,8 +101,7 @@ export interface ApiClient {
     card_payment_methods?: string[] | null;
   }): Promise<CommitmentRecord>;
   deleteCommitment(commitmentId: string): Promise<{ id: string; deleted: boolean }>;
-  pauseCommitment(commitmentId: string): Promise<CommitmentRecord>;
-  resumeCommitment(commitmentId: string): Promise<CommitmentRecord>;
+  archiveCommitment(commitmentId: string): Promise<CommitmentRecord>;
   recordCommitmentPayment(commitmentId: string, occurrenceId: string, input: { amount: string; account_id: string; paid_at: string; idempotency_key: string }): Promise<{ amount: string; remaining_due: string }>;
   reversePayment(paymentId: string, input: { reason: string; idempotency_key: string }): Promise<{ reversed: boolean; reason: string }>;
   listAccounts(): Promise<AccountRecord[]>;
@@ -106,6 +110,7 @@ export interface ApiClient {
   deleteFinancialAccount(accountId: string): Promise<{ id: string; deleted: boolean }>;
   archiveAccount(accountId: string): Promise<{ id: string; archived: boolean }>;
   reconcileAccount(accountId: string, input: { target_balance: string; reason: string }): Promise<AccountRecord>;
+  depositToAccount(accountId: string, input: { amount: string; description: string; occurred_at: string; idempotency_key: string }): Promise<AccountRecord>;
   listExpenses(filters?: { from?: string; to?: string; category?: string; account_id?: string }): Promise<ExpenseRecord[]>;
   createExpense(input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null; idempotency_key: string; confirm_overdraft?: boolean }): Promise<ExpenseRecord>;
   updateExpense(expenseId: string, input: { account_id: string; category: string; amount: string; occurred_at: string; description: string; reference_number?: string | null }): Promise<ExpenseRecord>;
@@ -115,10 +120,12 @@ export interface ApiClient {
   listTransactions(filters?: { from?: string; to?: string; account_id?: string; q?: string }): Promise<TransactionRecord[]>;
   listDebts(): Promise<DebtRecord[]>;
   listDebtStatements(debtId: string): Promise<DebtStatementRecord[]>;
-  createDebt(input: { name: string; kind: string; outstanding_amount: string; minimum_payment?: string | null; due_date: string | null; last_four: string | null; idempotency_key: string }): Promise<DebtRecord>;
+  createDebt(input: { name: string; kind: string; outstanding_amount: string; minimum_payment?: string | null; due_date: string | null; last_four: string | null; idempotency_key: string; loan_number?: string | null; institution?: string | null; installment_amount?: string | null; next_payment_date?: string | null; recurrence?: 'biweekly' | 'monthly' | null; maturity_date?: string | null; card_product_name?: string | null; approved_credit_limit?: string | null; authorized_overdraft_limit?: string | null; statement_balance?: string | null; statement_day?: number | null; payment_grace_days?: number | null }): Promise<DebtRecord>;
+  updateDebt(debtId: string, input: { name: string; kind: string; outstanding_amount: string; minimum_payment?: string | null; due_date?: string | null; last_four?: string | null; loan_number?: string | null; institution?: string | null; installment_amount?: string | null; next_payment_date?: string | null; recurrence?: 'biweekly' | 'monthly' | null; maturity_date?: string | null; card_product_name?: string | null; approved_credit_limit?: string | null; authorized_overdraft_limit?: string | null; statement_balance?: string | null; statement_day?: number | null; payment_grace_days?: number | null }): Promise<DebtRecord>;
+  deleteDebt(debtId: string): Promise<{ id: string; deleted: boolean }>;
   updateDebtMinimumPayment(debtId: string, input: { minimum_payment: string; due_date?: string | null }): Promise<DebtRecord>;
   increaseDebt(debtId: string, input: { amount: string; description: string; occurred_at: string; idempotency_key: string }): Promise<DebtRecord>;
-  recordDebtPayment(debtId: string, input: { amount: string; account_id: string | null; paid_at: string; idempotency_key: string }): Promise<{ outstanding: string }>;
+  recordDebtPayment(debtId: string, input: { amount: string; account_id: string | null; paid_at: string; idempotency_key: string; payment_type?: 'total' | 'statement' | 'minimum' | 'custom' }): Promise<{ outstanding: string }>;
   previewCreditCardAuthorization(debtId: string, amount: string): Promise<{
     previous_balance: string;
     projected_balance: string;
@@ -148,6 +155,7 @@ export interface ApiClient {
   getCashFlowReport(from: string, to: string, groupBy: string): Promise<CashFlowReport>;
   getSettings(): Promise<Preferences>;
   updateSettings(input: Partial<Preferences>): Promise<Preferences>;
+  uploadSettingsPhoto(type: 'profile' | 'piggy-bank', photo: File): Promise<Preferences>;
   listChatMessages(): Promise<ChatMessageItem[]>;
   sendChatMessage(message: string): Promise<ChatMessageItem>;
   clearChatMessages(): Promise<void>;

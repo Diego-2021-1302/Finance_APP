@@ -2,7 +2,7 @@ import type { ApiClient } from './types';
 import { createUuid } from './uuid';
 import type {
   AccountRecord, CalendarEvent, CashFlowReport, CommitmentRecord, DashboardSummary, DebtBalancePoint, DebtRecord, ExpenseRecord, FinanceInsights,
-  IncomeRecord, Preferences, TransactionRecord, TransferRecord, User,
+  IncomeRecord, InterestCutReport, Preferences, TransactionRecord, TransferRecord, User,
   ImportedTransaction, PiggyBankData,
 } from '../types';
 
@@ -31,6 +31,9 @@ type CommitmentResponse = {
   institution?: string | null;
   current_balance?: string | null;
   statement_balance?: string | null;
+  card_payment_mode?: 'minimum' | 'statement';
+  minimum_payment?: string | null;
+  minimum_payment_confirmed?: boolean;
   statement_day?: number | null;
   payment_grace_days?: number | null;
   interest_rate?: string | null;
@@ -59,7 +62,8 @@ type CommitmentResponse = {
   late_fee?: string | null;
   card_benefits?: string[] | null;
   card_payment_methods?: string[] | null;
-  debt_id?: number | null;
+  debt_id?: number | string | null;
+  standalone_debt?: boolean;
   account_id?: number | null;
   term_months?: number | null;
   amortization_type?: string | null;
@@ -91,6 +95,9 @@ type RawSettings = {
   reminders: number;
   week_starts: 'Monday' | 'Sunday';
   appearance: 'light' | 'dark' | 'system';
+  pay_frequency: 'weekly' | 'biweekly' | 'monthly';
+  profile_photo_url: string | null;
+  piggy_bank_photo_url: string | null;
 };
 
 const tunnelUrlStorageKey = 'finance-app.active-tunnel-url';
@@ -110,7 +117,13 @@ export class ApiRequestError extends Error {
 }
 
 function getApiBaseUrl(): string {
-  const cachedUrl = globalThis.localStorage.getItem(tunnelUrlStorageKey);
+  const isLocalHost = globalThis.location?.hostname === '127.0.0.1'
+    || globalThis.location?.hostname === 'localhost';
+  if (isLocalHost) {
+    globalThis.localStorage.removeItem(tunnelUrlStorageKey);
+  }
+
+  const cachedUrl = isLocalHost ? null : globalThis.localStorage.getItem(tunnelUrlStorageKey);
   if (cachedUrl) {
     return `${cachedUrl.replace(/\/+$/, '')}/api/v1`;
   }
@@ -290,7 +303,9 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
 
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-  if (init.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (init.body !== undefined && !(typeof FormData !== 'undefined' && init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
   const targetUrl = `${currentApiBase}${path}`;
@@ -311,11 +326,16 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
         }
       }
 
-      const message = typeof payload === 'object' && payload !== null
-        && 'error' in payload && typeof payload.error === 'object' && payload.error !== null
-        && 'message' in payload.error && typeof payload.error.message === 'string'
-        ? payload.error.message
-        : `La solicitud falló (${response.status})`;
+      const payloadRecord = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : null;
+      const nestedError = payloadRecord?.error;
+      const nestedErrorRecord = typeof nestedError === 'object' && nestedError !== null
+        ? nestedError as Record<string, unknown>
+        : null;
+      const message = typeof payloadRecord?.message === 'string'
+        ? payloadRecord.message
+        : typeof nestedErrorRecord?.message === 'string'
+          ? nestedErrorRecord.message
+          : `La solicitud falló (${response.status})`;
       throw new ApiRequestError(message, response.status);
     }
 
@@ -343,7 +363,19 @@ function toPreferences(settings: RawSettings): Preferences {
     reminders: settings.reminders,
     weekStarts: settings.week_starts,
     appearance: settings.appearance,
+    payFrequency: settings.pay_frequency ?? 'monthly',
+    profilePhotoUrl: resolveApiResourceUrl(settings.profile_photo_url),
+    piggyBankPhotoUrl: resolveApiResourceUrl(settings.piggy_bank_photo_url),
   };
+}
+
+function resolveApiResourceUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+
+  const apiBase = getApiBaseUrl();
+  const base = /^https?:\/\//i.test(apiBase) ? `${new URL(apiBase).origin}/` : globalThis.location.origin;
+  return new URL(value, base).toString();
 }
 
 function toRawPreferences(input: Partial<Preferences>): Partial<RawSettings> {
@@ -353,6 +385,7 @@ function toRawPreferences(input: Partial<Preferences>): Partial<RawSettings> {
   if (input.reminders !== undefined) result.reminders = input.reminders;
   if (input.weekStarts !== undefined) result.week_starts = input.weekStarts as RawSettings['week_starts'];
   if (input.appearance !== undefined) result.appearance = input.appearance;
+  if (input.payFrequency !== undefined) result.pay_frequency = input.payFrequency;
   return result;
 }
 
@@ -408,6 +441,11 @@ export const liveClient: ApiClient = {
     return request<DashboardSummary>('/dashboard/summary');
   },
 
+  getDebtHistory() {
+    return request<{ data: import('../types').DebtHistoryPoint[] }>('/dashboard/debt-history')
+      .then((result) => result.data);
+  },
+
   async getDebtBalanceHistory() {
     const result = await request<{ data: Array<{ month: string; balance: string }> }>('/debts/history');
     return result.data.map((item): DebtBalancePoint => ({
@@ -427,15 +465,21 @@ export const liveClient: ApiClient = {
     return request<Envelope<import('../types').FinancialPlan>>(`/financial-plan?days=${days}`).then((result) => result.data);
   },
 
+  getInterestCut() {
+    return request<Envelope<InterestCutReport>>('/interests/cut').then((result) => result.data);
+  },
+
   async listIncomes() {
     const result = await request<{ data: IncomeResponse[]; meta: { total: number } }>('/incomes');
     return result.data.map((item): IncomeRecord => ({
       id: String(item.id),
       source: item.source,
       amount: toMoney(item.amount),
+      amountDecimal: item.amount,
       expectedDate: displayDate(item.expected_date),
       status: displayStatus(item.status),
       receivedAmount: toMoney(item.received_amount),
+      receivedAmountDecimal: item.received_amount,
     }));
   },
 
@@ -448,6 +492,8 @@ export const liveClient: ApiClient = {
       id: String(result.data.id),
       source: result.data.source,
       amount: toMoney(result.data.amount),
+      amountDecimal: result.data.amount,
+      receivedAmountDecimal: '0.00',
       expectedDate: displayDate(result.data.expected_date),
       status: displayStatus(result.data.status),
     };
@@ -504,6 +550,9 @@ export const liveClient: ApiClient = {
       institution: item.institution,
       currentBalance: item.current_balance == null ? null : toMoney(item.current_balance),
       statementBalance: item.statement_balance == null ? null : toMoney(item.statement_balance),
+      cardPaymentMode: item.card_payment_mode ?? 'statement',
+      minimumPayment: item.minimum_payment == null ? null : toMoney(item.minimum_payment),
+      minimumPaymentConfirmed: item.minimum_payment_confirmed ?? false,
       statementDay: item.statement_day ?? null,
       paymentGraceDays: item.payment_grace_days ?? null,
       interestRate: item.interest_rate,
@@ -532,6 +581,7 @@ export const liveClient: ApiClient = {
       cardPaymentMethods: item.card_payment_methods,
       capacityMetrics: item.capacity_metrics ?? null,
       isActive: item.is_active,
+      standaloneDebt: item.standalone_debt === true,
       debtId: item.debt_id == null ? null : String(item.debt_id),
       accountId: item.account_id == null ? null : String(item.account_id),
       termMonths: item.term_months ?? null,
@@ -540,6 +590,7 @@ export const liveClient: ApiClient = {
       amortization: item.amortization ?? null,
       amount: toMoney(item.amount),
       dueDate: displayDate(item.due_date ?? item.next_due_date ?? null),
+      dueDateIso: (item.due_date ?? item.next_due_date ?? null)?.slice(0, 10) || null,
       status: displayStatus(item.status),
     });
     return {
@@ -566,6 +617,7 @@ export const liveClient: ApiClient = {
       referenceNumber: result.data.reference_number,
       institution: result.data.institution,
       currentBalance: result.data.current_balance == null ? null : toMoney(result.data.current_balance),
+      cardPaymentMode: result.data.card_payment_mode ?? input.card_payment_mode ?? 'statement',
       interestRate: result.data.interest_rate,
       category: result.data.category,
       maturityDate: result.data.maturity_date ? displayDate(result.data.maturity_date) : null,
@@ -599,6 +651,7 @@ export const liveClient: ApiClient = {
       referenceNumber: result.data.reference_number,
       institution: result.data.institution,
       currentBalance: result.data.current_balance == null ? null : toMoney(result.data.current_balance),
+      cardPaymentMode: result.data.card_payment_mode ?? input.card_payment_mode ?? 'statement',
       interestRate: result.data.interest_rate,
       category: result.data.category,
       maturityDate: result.data.maturity_date ? displayDate(result.data.maturity_date) : null,
@@ -620,8 +673,8 @@ export const liveClient: ApiClient = {
     };
   },
 
-  async pauseCommitment(commitmentId: string) {
-    const result = await request<Envelope<CommitmentResponse & { frequency: string; next_due_date: string }>>(`/commitments/${encodeURIComponent(commitmentId)}/pause`, { method: 'POST' });
+  async archiveCommitment(commitmentId: string) {
+    const result = await request<Envelope<CommitmentResponse & { frequency: string; next_due_date: string }>>(`/commitments/${encodeURIComponent(commitmentId)}/archive`, { method: 'POST' });
     return {
       id: String(result.data.id),
       name: result.data.name ?? 'Compromiso',
@@ -631,20 +684,6 @@ export const liveClient: ApiClient = {
       dueDate: displayDate(result.data.next_due_date),
       status: 'Archivado',
       isActive: false,
-    };
-  },
-
-  async resumeCommitment(commitmentId: string) {
-    const result = await request<Envelope<CommitmentResponse & { frequency: string; next_due_date: string }>>(`/commitments/${encodeURIComponent(commitmentId)}/resume`, { method: 'POST' });
-    return {
-      id: String(result.data.id),
-      name: result.data.name ?? 'Compromiso',
-      type: result.data.type ?? 'other',
-      amount: toMoney(result.data.amount),
-      frequency: result.data.frequency,
-      dueDate: displayDate(result.data.next_due_date),
-      status: 'Activo',
-      isActive: true,
     };
   },
 
@@ -678,12 +717,17 @@ export const liveClient: ApiClient = {
   },
 
   async listAccounts() {
-    const result = await request<{ data: Array<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string; debt_id: number | null }> }>('/accounts');
+    const result = await request<{ data: Array<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string; debt_id: number | null; approved_credit_limit: string | null; authorized_overdraft_limit: string | null; outstanding_amount: string | null; available_credit_capacity: string | null; last_four: string | null }> }>('/accounts');
     return result.data.map((item): AccountRecord => ({
       ...item,
       id: String(item.id),
       debtId: item.debt_id == null ? null : String(item.debt_id),
       balance: toMoney(item.balance),
+      approvedCreditLimit: item.approved_credit_limit == null ? null : toMoney(item.approved_credit_limit),
+      authorizedOverdraftLimit: item.authorized_overdraft_limit == null ? null : toMoney(item.authorized_overdraft_limit),
+      outstandingAmount: item.outstanding_amount == null ? null : toMoney(item.outstanding_amount),
+      availableCreditCapacity: item.available_credit_capacity == null ? null : toMoney(item.available_credit_capacity),
+      lastFour: item.last_four == null ? null : item.last_four,
     }));
   },
 
@@ -720,6 +764,14 @@ export const liveClient: ApiClient = {
   async reconcileAccount(accountId, input) {
     const result = await request<Envelope<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string }>>(
       `/accounts/${encodeURIComponent(accountId)}/reconcile`,
+      { method: 'POST', body: jsonBody(input) },
+    );
+    return { ...result.data, id: String(result.data.id), balance: toMoney(result.data.balance) };
+  },
+
+  async depositToAccount(accountId, input) {
+    const result = await request<Envelope<{ id: number; name: string; institution: string | null; type: string; currency: string; balance: string }>>(
+      `/accounts/${encodeURIComponent(accountId)}/deposit`,
       { method: 'POST', body: jsonBody(input) },
     );
     return { ...result.data, id: String(result.data.id), balance: toMoney(result.data.balance) };
@@ -853,6 +905,16 @@ export const liveClient: ApiClient = {
       account_id: number | null;
       term_months: number | null;
       amortization_type: string | null;
+      reference_number: string | null;
+      maturity_date: string | null;
+      remaining_installments: number | null;
+      card_product_name: string | null;
+      institution: string | null;
+      statement_balance: string | null;
+      statement_day: number | null;
+      payment_grace_days: number | null;
+      next_cutoff_date: string | null;
+      effective_due_date: string | null;
     }> }>('/debts');
     return result.data.map((item): DebtRecord => ({
       id: String(item.id),
@@ -872,7 +934,18 @@ export const liveClient: ApiClient = {
       accountId: item.account_id == null ? null : String(item.account_id),
       termMonths: item.term_months,
       amortizationType: item.amortization_type,
-      dueDate: displayDate(item.due_date),
+      referenceNumber: item.reference_number,
+      maturityDate: item.maturity_date,
+      remainingInstallments: item.remaining_installments,
+      cardProductName: item.card_product_name,
+      institution: item.institution,
+      statementBalance: item.statement_balance === null ? null : toMoney(item.statement_balance),
+      statementDay: item.statement_day,
+      paymentGraceDays: item.payment_grace_days,
+      nextCutoffDate: item.next_cutoff_date,
+      effectiveDueDate: item.effective_due_date,
+      dueDate: displayDate(item.effective_due_date ?? item.due_date),
+      dueDateIso: (item.effective_due_date ?? item.due_date ?? null)?.slice(0, 10) || null,
     }));
   },
 
@@ -900,6 +973,25 @@ export const liveClient: ApiClient = {
       minimum: result.data.minimum === null ? null : toMoney(result.data.minimum),
       dueDate: displayDate(result.data.due_date),
     };
+  },
+
+  async updateDebt(debtId, input) {
+    const result = await request<Envelope<{
+      id: number; account: string; kind: string; outstanding: string; minimum: string | null; due_date: string | null;
+    }>>(`/debts/${encodeURIComponent(debtId)}`, { method: 'PUT', body: jsonBody(input) });
+    return {
+      id: String(result.data.id),
+      account: result.data.account,
+      kind: result.data.kind,
+      outstanding: toMoney(result.data.outstanding),
+      minimum: result.data.minimum === null ? null : toMoney(result.data.minimum),
+      dueDate: displayDate(result.data.due_date),
+    };
+  },
+
+  async deleteDebt(debtId) {
+    const result = await request<{ data: { id: number; deleted: boolean } }>(`/debts/${encodeURIComponent(debtId)}`, { method: 'DELETE' });
+    return { id: String(result.data.id), deleted: result.data.deleted };
   },
 
   async updateDebtMinimumPayment(debtId, input) {
@@ -1016,6 +1108,17 @@ export const liveClient: ApiClient = {
     const result = await request<Envelope<RawSettings>>('/settings', {
       method: 'PATCH',
       body: jsonBody(toRawPreferences(input)),
+    });
+    return toPreferences(result.data);
+  },
+
+  async uploadSettingsPhoto(type, photo) {
+    const body = new FormData();
+    body.append('type', type);
+    body.append('photo', photo);
+    const result = await request<Envelope<RawSettings>>('/settings/photos', {
+      method: 'POST',
+      body,
     });
     return toPreferences(result.data);
   },

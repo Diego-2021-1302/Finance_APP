@@ -14,6 +14,8 @@ use App\Models\CreditCardStatement;
 use App\Models\Debt;
 use App\Models\DebtBalanceMovement;
 use App\Models\User;
+use App\Services\CardPaymentSchedule;
+use App\Services\LoanPaymentSchedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -53,10 +55,112 @@ class DebtController extends Controller
             $minimumConfirmed = array_key_exists('minimum_payment', $validated) && $validated['minimum_payment'] !== null;
             $debtAttributes['minimum_payment'] = $minimumConfirmed ? $validated['minimum_payment'] : '0.00';
             $debtAttributes['minimum_payment_confirmed'] = $minimumConfirmed;
+
+            if ($validated['kind'] === 'loan') {
+                $maturityDate = \Illuminate\Support\Carbon::parse($validated['maturity_date'])->startOfDay();
+                $nextPaymentDate = \Illuminate\Support\Carbon::parse($validated['next_payment_date'])->startOfDay();
+                $schedule = \App\Services\LoanPaymentSchedule::remainingInstallments(
+                    now(),
+                    $maturityDate,
+                    $validated['recurrence'],
+                    (string) $validated['outstanding_amount'],
+                    (string) $validated['installment_amount']
+                );
+                $debtAttributes['name'] = $validated['name'];
+                $debtAttributes['last_four'] = null;
+                $debtAttributes['institution'] = null;
+                $debtAttributes['reference_number'] = $validated['loan_number'];
+                $debtAttributes['institution'] = $validated['institution'] ?? null;
+                $debtAttributes['minimum_payment'] = $validated['installment_amount'];
+                $debtAttributes['minimum_payment_confirmed'] = true;
+                $debtAttributes['due_date'] = $nextPaymentDate->toDateString();
+                $debtAttributes['maturity_date'] = $maturityDate->toDateString();
+                $debtAttributes['term_months'] = $schedule['months_remaining'];
+                $debtAttributes['amortization_type'] = $validated['recurrence'];
+            }
+
+            $approvedLimit = null;
+            $overdraftLimit = '0.00';
+            $statementBalance = null;
+            $statementDay = null;
+            $paymentGraceDays = null;
+
+            if ($validated['kind'] === 'credit_card') {
+                $approvedLimit = isset($validated['approved_credit_limit']) ? (string) $validated['approved_credit_limit'] : null;
+                $overdraftLimit = (string) ($validated['authorized_overdraft_limit'] ?? '0.00');
+                $statementBalance = isset($validated['statement_balance']) ? (string) $validated['statement_balance'] : null;
+                $statementDay = isset($validated['statement_day']) ? (int) $validated['statement_day'] : null;
+                $paymentGraceDays = isset($validated['payment_grace_days']) ? (int) $validated['payment_grace_days'] : null;
+
+                $debtAttributes['name'] = ($validated['card_product_name'] ?? null) ?: $validated['name'];
+                $debtAttributes['credit_limit'] = $approvedLimit;
+                $debtAttributes['approved_credit_limit'] = $approvedLimit;
+                $debtAttributes['authorized_overdraft_limit'] = $overdraftLimit;
+                $debtAttributes['limit_status'] = $approvedLimit === null ? 'unknown' : 'confirmed';
+                $debtAttributes['statement_balance'] = $statementBalance;
+                $debtAttributes['statement_day'] = $statementDay;
+                $debtAttributes['payment_grace_days'] = $paymentGraceDays;
+
+                if ($statementDay !== null && $paymentGraceDays !== null) {
+                    $cutoffDate = $this->nextCutoffDate($statementDay);
+                    $dueDate = $cutoffDate->copy()->addDays($paymentGraceDays);
+                    $debtAttributes['due_date'] = $dueDate->toDateString();
+                }
+            }
+
             $debt = Debt::query()->create($debtAttributes + ['user_id' => $user->id]);
+
+            $cardAccount = null;
+            if ($validated['kind'] === 'credit_card') {
+                $cardName = ($validated['card_product_name'] ?? null) ?: $validated['name'];
+                $cardAccount = Account::query()->create([
+                    'user_id' => $user->id,
+                    'debt_id' => $debt->id,
+                    'name' => $cardName,
+                    'institution' => $validated['institution'] ?? null,
+                    'type' => 'credit_card',
+                    'currency' => 'DOP',
+                    'last_four' => $validated['last_four'] ?? null,
+                    'credit_limit' => $approvedLimit === null ? '0.00' : bcadd((string) $approvedLimit, (string) $overdraftLimit, 2),
+                    'approved_credit_limit' => $approvedLimit,
+                    'authorized_overdraft_limit' => $overdraftLimit,
+                    'limit_status' => $approvedLimit === null ? 'unknown' : 'confirmed',
+                    'card_product_name' => $cardName,
+                ]);
+                $debt->update(['account_id' => $cardAccount->id]);
+
+                if (bccomp((string) $validated['outstanding_amount'], '0.00', 2) > 0) {
+                    \App\Models\FinancialTransaction::query()->create([
+                        'user_id' => $user->id,
+                        'account_id' => $cardAccount->id,
+                        'description' => 'Saldo inicial de tarjeta',
+                        'amount' => bcsub('0.00', (string) $validated['outstanding_amount'], 2),
+                        'occurred_at' => now(),
+                        'kind' => 'account_opening',
+                    ]);
+                }
+
+                if ($statementDay !== null && $paymentGraceDays !== null && $statementBalance !== null) {
+                    $cutoffDate = $this->nextCutoffDate($statementDay);
+                    $dueDate = $cutoffDate->copy()->addDays($paymentGraceDays);
+                    CreditCardStatement::query()->create([
+                    'user_id' => $user->id,
+                    'commitment_id' => null,
+                    'debt_id' => $debt->id,
+                    'statement_date' => $cutoffDate->toDateString(),
+                    'closing_balance' => $statementBalance,
+                    'due_date' => $dueDate->toDateString(),
+                    'minimum_payment' => $minimumConfirmed ? $validated['minimum_payment'] : '0.00',
+                    'minimum_payment_confirmed' => $minimumConfirmed,
+                    'minimum_payment_confirmed_at' => $minimumConfirmed ? now() : null,
+                    ]);
+                }
+            }
+
             DebtBalanceMovement::query()->create([
                 'user_id' => $user->id,
                 'debt_id' => $debt->id,
+                'account_id' => $cardAccount?->id,
                 'kind' => 'opening_balance',
                 'delta' => $validated['outstanding_amount'],
                 'description' => 'Initial balance',
@@ -64,10 +168,182 @@ class DebtController extends Controller
                 'idempotency_key' => $validated['idempotency_key'],
             ]);
 
-            return ['debt' => $debt, 'created' => true];
+            return ['debt' => $debt->refresh(), 'created' => true];
         });
 
         return response()->json(['data' => $this->serialize($result['debt'])], $result['created'] ? 201 : 200);
+    }
+
+    public function update(Request $request, int $debt): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:160'],
+            'kind' => ['required', 'in:loan,credit_card,personal,other'],
+            'outstanding_amount' => ['required', 'numeric', 'gte:0', 'decimal:0,2'],
+            'minimum_payment' => ['nullable', 'numeric', 'gte:0', 'decimal:0,2'],
+            'due_date' => ['nullable', 'date'],
+            'institution' => ['nullable', 'string', 'max:160'],
+            'loan_number' => ['nullable', 'string', 'max:80'],
+            'installment_amount' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
+            'next_payment_date' => ['nullable', 'date'],
+            'recurrence' => ['nullable', 'in:biweekly,monthly'],
+            'maturity_date' => ['nullable', 'date'],
+            'card_product_name' => ['nullable', 'string', 'max:160'],
+            'last_four' => ['nullable', 'digits:4'],
+            'approved_credit_limit' => ['nullable', 'numeric', 'gte:0', 'decimal:0,2'],
+            'authorized_overdraft_limit' => ['nullable', 'numeric', 'gte:0', 'decimal:0,2'],
+            'statement_balance' => ['nullable', 'numeric', 'gte:0', 'decimal:0,2'],
+            'statement_day' => ['nullable', 'integer', 'between:1,31'],
+            'payment_grace_days' => ['nullable', 'integer', 'between:1,365'],
+        ]);
+
+        $record = DB::transaction(function () use ($request, $debt, $validated) {
+            $record = Debt::query()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($debt)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $attributes = [
+                'name' => $validated['name'],
+                'kind' => $validated['kind'],
+                'outstanding_amount' => $validated['outstanding_amount'],
+                'minimum_payment' => $validated['minimum_payment'] ?? '0.00',
+                'minimum_payment_confirmed' => $validated['minimum_payment'] !== null,
+                'due_date' => $validated['due_date'] ?? $record->due_date,
+                'last_four' => $validated['last_four'] ?? $record->last_four,
+            ];
+
+            if ($validated['kind'] === 'loan') {
+                $maturity = \Illuminate\Support\Carbon::parse($validated['maturity_date'] ?? $record->maturity_date)->startOfDay();
+                $nextPayment = \Illuminate\Support\Carbon::parse($validated['next_payment_date'] ?? $record->due_date)->startOfDay();
+                $recurrence = $validated['recurrence'] ?? $record->amortization_type ?? 'monthly';
+                $installment = (string) ($validated['installment_amount'] ?? $validated['minimum_payment'] ?? $record->minimum_payment ?? '0.00');
+                $schedule = \App\Services\LoanPaymentSchedule::remainingInstallments(
+                    now(),
+                    $maturity,
+                    $recurrence,
+                    (string) $validated['outstanding_amount'],
+                    $installment
+                );
+                $attributes += [
+                    'reference_number' => $validated['loan_number'] ?? $record->reference_number,
+                    'institution' => $validated['institution'] ?? $record->institution,
+                    'maturity_date' => $maturity->toDateString(),
+                    'minimum_payment' => $installment,
+                    'minimum_payment_confirmed' => true,
+                    'due_date' => $nextPayment->toDateString(),
+                    'term_months' => $schedule['months_remaining'],
+                    'amortization_type' => $recurrence,
+                ];
+            }
+
+            if ($validated['kind'] === 'credit_card') {
+                $approved = (string) ($validated['approved_credit_limit'] ?? '0.00');
+                $overdraft = (string) ($validated['authorized_overdraft_limit'] ?? '0.00');
+                $statementDay = (int) ($validated['statement_day'] ?? $record->statement_day ?? 1);
+                $graceDays = (int) ($validated['payment_grace_days'] ?? $record->payment_grace_days ?? 25);
+                $cutoff = CardPaymentSchedule::keepOrAdvanceDueDate(
+                    $record->due_date?->toDateString(),
+                    $statementDay,
+                    $graceDays
+                );
+
+                $attributes += [
+                    'card_product_name' => $validated['card_product_name'] ?? $validated['name'],
+                    'institution' => $validated['institution'] ?? null,
+                    'approved_credit_limit' => $approved,
+                    'credit_limit' => $approved,
+                    'authorized_overdraft_limit' => $overdraft,
+                    'limit_status' => 'confirmed',
+                    'statement_balance' => $validated['statement_balance'] ?? $record->statement_balance,
+                    'statement_day' => $statementDay,
+                    'payment_grace_days' => $graceDays,
+                    'due_date' => $cutoff->toDateString(),
+                ];
+            }
+
+            $record->update($attributes);
+
+            if ($record->kind === 'credit_card' && $record->account_id) {
+                $account = Account::query()
+                    ->where('user_id', $request->user()->id)
+                    ->whereKey($record->account_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($account) {
+                    $account->update([
+                        'name' => $validated['card_product_name'] ?? $validated['name'],
+                        'institution' => $validated['institution'] ?? $account->institution,
+                        'last_four' => $validated['last_four'] ?? $account->last_four,
+                        'approved_credit_limit' => $attributes['approved_credit_limit'] ?? $account->approved_credit_limit,
+                        'credit_limit' => bcadd((string) ($attributes['approved_credit_limit'] ?? '0'), (string) ($attributes['authorized_overdraft_limit'] ?? '0'), 2),
+                        'authorized_overdraft_limit' => $attributes['authorized_overdraft_limit'] ?? $account->authorized_overdraft_limit,
+                        'limit_status' => 'confirmed',
+                        'card_product_name' => $validated['card_product_name'] ?? $validated['name'],
+                    ]);
+
+                    $opening = \App\Models\FinancialTransaction::query()
+                        ->where('user_id', $request->user()->id)
+                        ->where('account_id', $account->id)
+                        ->where('kind', 'account_opening')
+                        ->orderBy('id')
+                        ->first();
+                    if ($opening) {
+                        $opening->update(['amount' => bcsub('0.00', (string) $validated['outstanding_amount'], 2)]);
+                    }
+                }
+
+                $statement = CreditCardStatement::query()
+                    ->where('user_id', $request->user()->id)
+                    ->where('debt_id', $record->id)
+                    ->orderByDesc('statement_date')
+                    ->lockForUpdate()
+                    ->first();
+                if ($statement) {
+                    $statement->update([
+                        'closing_balance' => $validated['statement_balance'] ?? $record->statement_balance,
+                        'due_date' => $record->due_date,
+                        'minimum_payment' => $validated['minimum_payment'] ?? '0.00',
+                        'minimum_payment_confirmed' => $validated['minimum_payment'] !== null,
+                    ]);
+                }
+            }
+
+            return $record->refresh();
+        }, 3);
+
+        return response()->json(['data' => $this->serialize($record)]);
+    }
+
+    public function destroy(Request $request, int $debt): JsonResponse
+    {
+        DB::transaction(function () use ($request, $debt) {
+            $record = Debt::query()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($debt)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            CreditCardStatement::query()->where('debt_id', $record->id)->delete();
+            DebtBalanceMovement::query()->where('debt_id', $record->id)->delete();
+
+            $accountId = $record->account_id;
+            if ($accountId) {
+                Account::query()->where('user_id', $request->user()->id)->whereKey($accountId)->update(['debt_id' => null]);
+                $record->update(['account_id' => null]);
+                \App\Models\FinancialTransaction::query()
+                    ->where('user_id', $request->user()->id)
+                    ->where('account_id', $accountId)
+                    ->delete();
+                Account::query()->where('user_id', $request->user()->id)->whereKey($accountId)->delete();
+            }
+
+            $record->delete();
+        }, 3);
+
+        return response()->json(['data' => ['id' => $debt, 'deleted' => true]]);
     }
 
     public function increase(IncreaseDebtBalanceRequest $request, int $debt): JsonResponse
@@ -340,6 +616,11 @@ class DebtController extends Controller
         return response()->json(['data' => $series]);
     }
 
+    private function nextCutoffDate(int $statementDay): Carbon
+    {
+        return CardPaymentSchedule::nextCutoff($statementDay);
+    }
+
     private function assertAccountOwnership(User $user, ?int $accountId): void
     {
         if ($accountId !== null) {
@@ -349,6 +630,18 @@ class DebtController extends Controller
 
     private function serialize(Debt $debt): array
     {
+        $remainingInstallments = null;
+        if ($debt->kind === 'loan' && $debt->maturity_date) {
+            $schedule = LoanPaymentSchedule::remainingInstallments(
+                now(),
+                $debt->maturity_date,
+                (string) ($debt->amortization_type ?? 'monthly'),
+                (string) $debt->outstanding_amount,
+                (string) ($debt->minimum_payment ?? '0.00')
+            );
+            $remainingInstallments = $schedule['count'];
+        }
+
         return [
             'id' => $debt->id,
             'account' => $debt->name,
@@ -366,8 +659,31 @@ class DebtController extends Controller
             'special_rules_reference' => $debt->special_rules_reference,
             'commitment_id' => $debt->commitment_id,
             'account_id' => $debt->account_id,
+            'card_product_name' => $debt->card_product_name,
+            'institution' => $debt->account?->institution,
+            'statement_balance' => $debt->statement_balance,
+            'statement_day' => $debt->statement_day,
+            'payment_grace_days' => $debt->payment_grace_days,
+            'next_cutoff_date' => $debt->kind === 'credit_card'
+                ? CardPaymentSchedule::effectiveCutoff(
+                    $debt->due_date?->toDateString(),
+                    (int) $debt->statement_day,
+                    (int) ($debt->payment_grace_days ?? 25)
+                )->toDateString()
+                : null,
+            'effective_due_date' => $debt->kind === 'credit_card'
+                ? CardPaymentSchedule::keepOrAdvanceDueDate(
+                    $debt->due_date?->toDateString(),
+                    (int) $debt->statement_day,
+                    (int) ($debt->payment_grace_days ?? 25)
+                )->toDateString()
+                : $debt->due_date?->toDateString(),
             'term_months' => $debt->term_months,
+            'remaining_installments' => $remainingInstallments,
             'amortization_type' => $debt->amortization_type,
+            'reference_number' => $debt->reference_number,
+            'institution' => $debt->institution,
+            'maturity_date' => $debt->maturity_date?->toDateString(),
         ];
     }
 }

@@ -8,12 +8,14 @@ export const financialQueryKeys = {
   calendar: ['calendar'] as const,
   cashFlow: ['cash-flow'] as const,
   dashboard: ['dashboard'] as const,
+  financialPlan: (days: number) => ['financial-plan', days] as const,
   income: ['income'] as const,
   expenses: ['expenses'] as const,
   reports: ['cash-flow'] as const,
 };
 
 export const commitmentInvalidationKeys = [
+  ['financial-plan'] as const,
   financialQueryKeys.commitments,
   financialQueryKeys.accounts,
   financialQueryKeys.debts,

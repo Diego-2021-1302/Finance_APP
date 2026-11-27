@@ -15,6 +15,7 @@ class SettingsRequest extends FormRequest
             'reminders' => ['sometimes', 'integer', 'between:1,14'],
             'week_starts' => ['sometimes', 'in:Monday,Sunday'],
             'appearance' => ['sometimes', 'in:light,dark,system'],
+            'pay_frequency' => ['sometimes', 'in:weekly,biweekly,monthly'],
         ];
     }
 }

@@ -13,7 +13,7 @@ class StoreAccountRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:160'],
             'institution' => ['nullable', 'string', 'max:160'],
-            'type' => ['required', 'in:checking,savings,cash,credit_card,other'],
+            'type' => ['required', 'in:checking,savings,cash,other'],
             'currency' => ['required', 'in:DOP'],
             'opening_balance' => ['required', 'numeric', 'decimal:0,2'],
         ];

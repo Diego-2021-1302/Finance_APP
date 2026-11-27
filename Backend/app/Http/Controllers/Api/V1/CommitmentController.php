@@ -12,6 +12,7 @@ use App\Models\CommitmentOccurrence;
 use App\Models\DebtBalanceMovement;
 use App\Services\DebtBalanceLedger;
 use App\Support\CreditCardCycleDates;
+use App\Support\CreditCardPaymentTarget;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,13 @@ class CommitmentController extends Controller
 
         if (($data['type'] ?? null) === 'credit_card') {
             $data['statement_balance'] = $data['statement_balance'] ?? $data['current_balance'];
-            $data['amount'] = bccomp((string) $data['statement_balance'], '0.00', 2) > 0 ? $data['statement_balance'] : '0.01';
+            $data['card_payment_mode'] = $data['card_payment_mode'] ?? 'statement';
+            $data['amount'] = CreditCardPaymentTarget::amount(
+                $data['card_payment_mode'],
+                (string) $data['statement_balance'],
+                $minimumPayment !== null ? (string) $minimumPayment : null,
+                $minimumPayment !== null,
+            );
             $data['frequency'] = 'monthly';
             $data['opening_balance'] = $data['current_balance'];
             $data['approved_credit_limit'] = $data['approved_credit_limit'] ?? $data['credit_limit'] ?? null;
@@ -44,12 +51,14 @@ class CommitmentController extends Controller
         $commitment = DB::transaction(function () use ($user, $data, $minimumPayment, $balanceLedger) {
             $commitment = Commitment::query()->create($data + ['user_id' => $user->id]);
 
-            CommitmentOccurrence::query()->create([
-                'user_id' => $user->id,
-                'commitment_id' => $commitment->id,
-                'amount_due' => $commitment->amount,
-                'due_date' => $commitment->next_due_date,
-            ]);
+            if ($commitment->type !== 'credit_card' || bccomp((string) $commitment->amount, '0.00', 2) > 0) {
+                CommitmentOccurrence::query()->create([
+                    'user_id' => $user->id,
+                    'commitment_id' => $commitment->id,
+                    'amount_due' => $commitment->amount,
+                    'due_date' => $commitment->next_due_date,
+                ]);
+            }
 
             if ($commitment->type === 'credit_card') {
                 $approvedLimit = $data['approved_credit_limit'] ?? $data['credit_limit'] ?? null;
@@ -101,7 +110,10 @@ class CommitmentController extends Controller
 
                 $account = \App\Models\Account::query()->where('user_id', $user->id)
                     ->where(function ($q) use ($commitment) {
-                        $q->where('commitment_id', $commitment->id)->orWhere('name', $commitment->name);
+                        $q->where('commitment_id', $commitment->id)
+                            ->orWhere(function ($cardAccount) use ($commitment) {
+                                $cardAccount->where('type', 'credit_card')->where('name', $commitment->name);
+                            });
                     })->first();
 
                 if (!$account) {
@@ -140,6 +152,9 @@ class CommitmentController extends Controller
                 } else {
                     $account->update([
                         'commitment_id' => $commitment->id,
+                        'type' => 'credit_card',
+                        'currency' => 'DOP',
+                        'is_active' => true,
                         'institution' => $commitment->institution,
                         'last_four' => $commitment->reference_number,
                         'credit_limit' => $approvedLimit,
@@ -296,7 +311,34 @@ class CommitmentController extends Controller
 
         $type = $request->string('type')->toString();
         if ($type !== '') {
-            $commitmentsQuery->where('type', $type);
+            if ($type === 'utility') {
+                $commitmentsQuery->where(function ($query) {
+                    $query->where('type', 'utility')
+                        ->orWhere(function ($legacy) {
+                            $legacy->where('type', 'other')
+                                ->whereIn('category', ['Servicios', 'Electricidad', 'Agua', 'Internet', 'Teléfono', 'Streaming', 'Gas', 'Otros']);
+                        });
+                });
+            } elseif (in_array($type, ['rent', 'subscription', 'insurance'], true)) {
+                $commitmentsQuery->where(function ($query) use ($type) {
+                    $query->where('type', $type);
+                    if ($type === 'subscription') {
+                        $query->orWhere(function ($legacy) {
+                            $legacy->where('type', 'other')->whereIn('category', ['Streaming', 'Suscripción', 'Suscripciones']);
+                        });
+                    } elseif ($type === 'insurance') {
+                        $query->orWhere(function ($legacy) {
+                            $legacy->where('type', 'other')->where('category', 'Seguro');
+                        });
+                    } elseif ($type === 'rent') {
+                        $query->orWhere(function ($legacy) {
+                            $legacy->where('type', 'other')->whereIn('category', ['Alquiler', 'Vivienda']);
+                        });
+                    }
+                });
+            } else {
+                $commitmentsQuery->where('type', $type);
+            }
         }
 
         $institution = $request->string('institution')->toString();
@@ -324,6 +366,51 @@ class CommitmentController extends Controller
 
         $perPage = min(max((int) $request->integer('per_page', 25), 1), 100);
         $commitments = $commitmentsQuery->paginate($perPage, ['*'], 'page', max((int) $request->integer('page', 1), 1));
+
+        $standaloneDebtItems = collect();
+        if ($type === '' || $type === 'credit_card' || $type === 'loan') {
+            $standaloneDebtQuery = \App\Models\Debt::query()
+                ->where('user_id', $userId)
+                ->whereNull('commitment_id')
+                ->where('outstanding_amount', '>', 0);
+
+            if ($type === 'credit_card') {
+                $standaloneDebtQuery->where('kind', 'credit_card');
+            } elseif ($type === 'loan') {
+                $standaloneDebtQuery->where('kind', 'loan');
+            }
+
+            $standaloneDebtItems = $standaloneDebtQuery
+                ->where(function ($query) use ($search, $institution) {
+                    if ($search !== '') {
+                        $query->where('name', 'like', '%' . $search . '%');
+                    }
+                    if ($institution !== '') {
+                        $query->where('institution', 'like', '%' . $institution . '%');
+                    }
+                })
+                ->get()
+                ->map(function ($debt) {
+                    $minimum = $debt->minimum_payment_confirmed
+                        ? (string) ($debt->minimum_payment ?? '0.00')
+                        : '0.00';
+                    return (object) [
+                        'id' => 'debt-' . $debt->id,
+                        'commitment_id' => null,
+                        'debt_id' => (string) $debt->id,
+                        'name' => $debt->name,
+                        'type' => $debt->kind === 'credit_card' ? 'credit_card' : ($debt->kind === 'loan' ? 'loan' : 'other'),
+                        'institution' => $debt->institution,
+                        'reference_number' => $debt->reference_number,
+                        'amount' => $debt->kind === 'loan' ? $minimum : (string) ($debt->statement_balance ?? $debt->outstanding_amount),
+                        'due_date' => $debt->due_date?->toDateString(),
+                        'next_due_date' => $debt->due_date?->toDateString(),
+                        'status' => 'Pendiente',
+                        'is_active' => true,
+                        'standalone_debt' => true,
+                    ];
+                });
+        }
 
         $occurrences = CommitmentOccurrence::query()->where('user_id', $userId)->with('commitment', 'payments')->orderBy('due_date')->get();
 
@@ -357,7 +444,7 @@ class CommitmentController extends Controller
         $pendingDebt = \App\Models\Debt::query()->where('user_id', $userId)->sum('outstanding_amount');
 
         return response()->json([
-            'commitments' => collect($commitments->items())->map(fn (Commitment $item) => $this->serializeCommitment($item)),
+            'commitments' => collect($commitments->items())->map(fn (Commitment $item) => $this->serializeCommitment($item))->concat($standaloneDebtItems)->values(),
             'occurrences' => $occurrences->map(function (CommitmentOccurrence $item) {
                 $paid = $item->payments->whereNull('reversed_at')->sum('amount');
                 $serialized = [
@@ -399,10 +486,10 @@ class CommitmentController extends Controller
                 'overdue' => $overdue,
                 'paid_period' => $paidPeriod,
                 'pending_debt' => (string) ($pendingDebt ?: '0.00'),
-                'active_count' => $activeCommitments->count(),
+                'active_count' => $activeCommitments->count() + (is_object($standaloneDebtItems) ? $standaloneDebtItems->count() : 0),
             ],
             'meta' => [
-                'total' => $commitments->total(),
+                'total' => $commitments->total() + $standaloneDebtItems->count(),
                 'per_page' => $commitments->perPage(),
                 'current_page' => $commitments->currentPage(),
                 'last_page' => $commitments->lastPage(),
@@ -422,6 +509,8 @@ class CommitmentController extends Controller
                 'institution' => ['required', 'string', 'max:160'],
                 'current_balance' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
                 'statement_balance' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'minimum_payment' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+                'card_payment_mode' => ['sometimes', 'in:minimum,statement'],
                 'statement_day' => ['nullable', 'integer', 'between:1,31'],
                 'payment_grace_days' => ['nullable', 'integer', 'between:1,31'],
                 'interest_rate' => ['nullable', 'numeric', 'between:0,100'],
@@ -448,13 +537,30 @@ class CommitmentController extends Controller
             ]);
 
             DB::transaction(function () use ($record, $validated) {
+                $mode = $validated['card_payment_mode'] ?? $record->card_payment_mode ?? 'statement';
+                $minimumPayment = array_key_exists('minimum_payment', $validated)
+                    ? ($validated['minimum_payment'] === null ? null : (string) $validated['minimum_payment'])
+                    : ($record->debt?->minimum_payment_confirmed ? (string) $record->debt->minimum_payment : null);
+                $minimumConfirmed = array_key_exists('minimum_payment', $validated)
+                    ? $validated['minimum_payment'] !== null
+                    : (bool) ($record->debt?->minimum_payment_confirmed ?? false);
+                if ($mode === 'minimum' && (!$minimumConfirmed || bccomp((string) $minimumPayment, '0.00', 2) <= 0)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'minimum_payment' => ['Indica un pago mínimo bancario mayor que cero para usar esta modalidad.'],
+                    ]);
+                }
+
+                $statementBalance = (string) ($validated['statement_balance'] ?? $validated['current_balance']);
+                $targetAmount = CreditCardPaymentTarget::amount($mode, $statementBalance, $minimumPayment, $minimumConfirmed);
                 $attributes = [
                     'name' => $validated['name'],
                     'type' => 'credit_card',
                     'reference_number' => $validated['reference_number'],
                     'institution' => $validated['institution'],
                     'current_balance' => $validated['current_balance'],
-                    'statement_balance' => $validated['statement_balance'] ?? $validated['current_balance'],
+                    'statement_balance' => $statementBalance,
+                    'card_payment_mode' => $mode,
+                    'amount' => $targetAmount,
                     'statement_day' => $validated['statement_day'] ?? $record->statement_day,
                     'payment_grace_days' => $validated['payment_grace_days'] ?? $record->payment_grace_days,
                     'interest_rate' => $validated['interest_rate'] ?? $record->interest_rate ?? '0.00',
@@ -465,17 +571,17 @@ class CommitmentController extends Controller
                     'overdraft_fee_amount' => $validated['overdraft_fee_amount'] ?? '0.00',
                     'overdraft_fee_percentage' => $validated['overdraft_fee_percentage'] ?? '0.00',
                     'limit_status' => $validated['limit_status'] ?? (($validated['approved_credit_limit'] ?? null) !== null ? 'confirmed' : 'unknown'),
-                    'card_product_name' => $validated['card_product_name'] ?? null,
-                    'card_variant' => $validated['card_variant'] ?? null,
-                    'card_network' => $validated['card_network'] ?? null,
-                    'card_currency' => $validated['card_currency'] ?? null,
-                    'issued_at' => $validated['issued_at'] ?? null,
-                    'annual_fee' => $validated['annual_fee'] ?? null,
-                    'replacement_fee' => $validated['replacement_fee'] ?? null,
-                    'cash_advance_fee' => $validated['cash_advance_fee'] ?? null,
-                    'late_fee' => $validated['late_fee'] ?? null,
-                    'card_benefits' => $validated['card_benefits'] ?? null,
-                    'card_payment_methods' => $validated['card_payment_methods'] ?? null,
+                    'card_product_name' => $validated['card_product_name'] ?? $record->card_product_name,
+                    'card_variant' => $validated['card_variant'] ?? $record->card_variant,
+                    'card_network' => $validated['card_network'] ?? $record->card_network,
+                    'card_currency' => $validated['card_currency'] ?? $record->card_currency,
+                    'issued_at' => $validated['issued_at'] ?? $record->issued_at,
+                    'annual_fee' => $validated['annual_fee'] ?? $record->annual_fee,
+                    'replacement_fee' => $validated['replacement_fee'] ?? $record->replacement_fee,
+                    'cash_advance_fee' => $validated['cash_advance_fee'] ?? $record->cash_advance_fee,
+                    'late_fee' => $validated['late_fee'] ?? $record->late_fee,
+                    'card_benefits' => $validated['card_benefits'] ?? $record->card_benefits,
+                    'card_payment_methods' => $validated['card_payment_methods'] ?? $record->card_payment_methods,
                     'notes' => $validated['notes'] ?? null,
                 ];
                 // Recompute upcoming due date when the user edits the billing cycle.
@@ -487,11 +593,51 @@ class CommitmentController extends Controller
                 $attributes['next_due_date'] = $cycle['next_due']->toDateString();
                 $record->update($attributes);
 
+                $latestStatement = \App\Models\CreditCardStatement::query()
+                    ->where('commitment_id', $record->id)
+                    ->orderByDesc('statement_date')
+                    ->first();
+                if ($latestStatement && array_key_exists('minimum_payment', $validated)) {
+                    $latestStatement->update([
+                        'minimum_payment' => $minimumPayment ?? '0.00',
+                        'minimum_payment_confirmed' => $minimumConfirmed,
+                        'minimum_payment_confirmed_at' => $minimumConfirmed ? now() : null,
+                    ]);
+                }
+
                 if ($record->account) {
                     $record->account->update($attributes);
                 }
                 if ($record->debt) {
-                    $record->debt->update($attributes + ['outstanding_amount' => $validated['current_balance']]);
+                    $debtAttributes = $attributes + ['outstanding_amount' => $validated['current_balance']];
+                    if (array_key_exists('minimum_payment', $validated)) {
+                        $debtAttributes['minimum_payment'] = $minimumPayment ?? '0.00';
+                        $debtAttributes['minimum_payment_confirmed'] = $minimumConfirmed;
+                    }
+                    $record->debt->update($debtAttributes);
+                }
+
+                $occurrence = CommitmentOccurrence::query()
+                    ->where('commitment_id', $record->id)
+                    ->whereDate('due_date', $attributes['next_due_date'])
+                    ->where('schedule_version', 1)
+                    ->lockForUpdate()
+                    ->first();
+                if ($occurrence && !$occurrence->payments()->whereNull('reversed_at')->exists()) {
+                    if (bccomp($targetAmount, '0.00', 2) > 0) {
+                        $occurrence->update(['amount_due' => $targetAmount, 'status' => 'scheduled']);
+                    } else {
+                        $occurrence->delete();
+                    }
+                } elseif (!$occurrence && bccomp($targetAmount, '0.00', 2) > 0) {
+                    CommitmentOccurrence::query()->create([
+                        'user_id' => $record->user_id,
+                        'commitment_id' => $record->id,
+                        'amount_due' => $targetAmount,
+                        'due_date' => $attributes['next_due_date'],
+                        'status' => 'scheduled',
+                        'schedule_version' => 1,
+                    ]);
                 }
             });
         } else {
@@ -530,14 +676,35 @@ class CommitmentController extends Controller
     {
         $record = Commitment::query()->where('user_id', $request->user()->id)->whereKey($commitment)->firstOrFail();
 
-        DB::transaction(function () use ($record) {
-            $record->update(['is_active' => false]);
-            CommitmentOccurrence::query()
-                ->where('commitment_id', $record->id)
-                ->where('status', 'scheduled')
-                ->whereDoesntHave('payments')
-                ->delete();
-        });
+        $pendingOccurrence = $record->occurrences()
+            ->whereIn('status', ['scheduled', 'partial', 'pending', 'overdue'])
+            ->get()
+            ->first(function (CommitmentOccurrence $occurrence) {
+                $paid = $occurrence->payments()->whereNull('reversed_at')->sum('amount');
+                $remaining = bcsub((string) $occurrence->amount_due, (string) $paid, 2);
+                return bccomp($remaining, '0.00', 2) > 0;
+            });
+
+        if ($pendingOccurrence) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'commitment' => ['No puedes archivar este compromiso mientras tenga pagos pendientes. Registra o revierte el saldo correspondiente primero.'],
+            ]);
+        }
+
+        $balancePending = '0.00';
+        if ($record->debt) {
+            $balancePending = (string) $record->debt->outstanding_amount;
+        } elseif ($record->current_balance !== null) {
+            $balancePending = (string) $record->current_balance;
+        }
+
+        if (bccomp($balancePending, '0.00', 2) > 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'commitment' => ['No puedes archivar este compromiso mientras exista un saldo o deuda pendiente.'],
+            ]);
+        }
+
+        $record->update(['is_active' => false]);
 
         return response()->json(['data' => $this->serializeCommitment($record->refresh())]);
     }
@@ -605,6 +772,9 @@ class CommitmentController extends Controller
             'statement_day' => $item->statement_day,
             'payment_grace_days' => $item->payment_grace_days,
             'statement_balance' => $item->statement_balance,
+            'card_payment_mode' => $item->card_payment_mode ?? 'statement',
+            'minimum_payment' => $item->debt?->minimum_payment_confirmed ? $item->debt->minimum_payment : null,
+            'minimum_payment_confirmed' => (bool) ($item->debt?->minimum_payment_confirmed ?? false),
             'credit_limit' => $item->approved_credit_limit ?? $item->credit_limit,
             'approved_credit_limit' => $item->approved_credit_limit ?? $item->credit_limit,
             'authorized_overdraft_limit' => $item->authorized_overdraft_limit,

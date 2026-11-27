@@ -1,172 +1,157 @@
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardHeader, Caption1, Subtitle1 } from '@fluentui/react-components';
-import {
-  WalletRegular, MoneyRegular, ArrowUpRightRegular, AlertRegular, ShieldLockRegular,
-} from '@fluentui/react-icons';
-import { Link } from 'react-router-dom';
+import { Button, Card, Caption1, Subtitle1 } from '@fluentui/react-components';
+import { AddRegular, ArrowRightRegular, CalendarRegular, MoneyRegular } from '@fluentui/react-icons';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '../api';
+import { financialQueryKeys } from '../api/queryKeys';
 import { ErrorState, LoadingState } from '../components/DataState';
+import { formatMoney } from '../utils/money';
+import { getPayPeriod } from '../utils/payPeriod';
 
 export function DashboardPage() {
-  const query = useQuery({ queryKey: ['dashboard'], queryFn: api.getDashboardSummary });
-  const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
-  const currentMonth = new Intl.DateTimeFormat('es-DO', { month: 'long', year: 'numeric' }).format(new Date());
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const payPeriod = getPayPeriod(settings.data?.payFrequency);
+  const horizonDays = payPeriod.days;
+  const interestCut = useQuery({
+    queryKey: ['interest-cut', payPeriod.days],
+    queryFn: api.getInterestCut,
+    enabled: settings.isSuccess,
+    refetchOnMount: 'always',
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const plan = useQuery({
+    queryKey: financialQueryKeys.financialPlan(horizonDays),
+    queryFn: () => api.getFinancialPlan(horizonDays),
+    enabled: settings.isSuccess,
+    refetchOnMount: 'always',
+  });
+  const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.getDashboardSummary });
 
-  if (query.isPending || accountsQuery.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />;
-  if (accountsQuery.isError) return <ErrorState onRetry={() => void accountsQuery.refetch()} />;
+  if (settings.isPending || plan.isPending || dashboard.isPending) return <LoadingState />;
+  if (plan.isError) return <ErrorState onRetry={() => void plan.refetch()} />;
 
-  const summary = query.data;
-  const accounts = accountsQuery.data;
-  const liquidAccounts = accounts.filter((account) => account.type !== 'credit_card');
-  const cards = summary.balances.cards ?? [];
-  const debtBreakdown = summary.balances.debtBreakdown ?? [];
-  const reservesBreakdown = summary.balances.reservesBreakdown ?? [];
+  const data = plan.data;
+  const nextIncome = data.expected_incomes[0];
+  const nextPayments = data.obligations.slice(0, 5);
+  const periodDebt = data.summary?.pending_obligations ?? data.obligations.reduce(
+    (total, obligation) => total + Number(obligation.amount_pending ?? obligation.amount_due),
+    0,
+  ).toFixed(2);
+  const periodDebtBars = data.obligations.slice(0, 6).map((obligation) => ({
+    label: obligation.name.length > 16 ? `${obligation.name.slice(0, 15)}…` : obligation.name,
+    dueDate: new Date(`${obligation.due_date}T12:00:00`).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' }),
+    amount: Number(obligation.amount_pending ?? obligation.amount_due),
+  }));
+  const totalDebt = dashboard.isError ? null : dashboard.data.balances.totalDebt;
+  const incomplete = data.data_completeness?.status === 'incomplete';
 
-  const metrics = [
-    { label: 'Saldo real en cuentas', value: summary.balances.real, detail: `${summary.balances.accountCount} cuentas registradas`, icon: <WalletRegular /> },
-    { label: 'Dinero reservado', value: summary.balances.reserved ?? 'RD$ 0.00', detail: 'Fondos apartados para obligaciones', icon: <ShieldLockRegular /> },
-    { label: 'Disponible sin comprometer', value: summary.balances.availableUncommitted ?? summary.balances.real, detail: 'Saldo real menos reservas activas', icon: <MoneyRegular /> },
-    { label: 'Deuda registrada', value: summary.balances.totalDebt ?? 'RD$ 0.00', detail: 'Saldos de tarjetas y préstamos', icon: <AlertRegular /> },
-  ];
+  const periodLabel = new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
 
   return (
-    <div style={{ display: 'grid', gap: '24px' }}>
-      {/* Target Summary Cards */}
-      <section className="metric-grid" aria-label={`Resumen financiero de ${currentMonth}`}>
-        {metrics.map((metric) => (
-          <Card className="metric-card" key={metric.label}>
-            <CardHeader image={<span className="metric-icon">{metric.icon}</span>} header={<Caption1>{metric.label}</Caption1>} />
-            <div className="metric-value">{metric.value}</div>
-            <Caption1>{metric.detail}</Caption1>
-          </Card>
-        ))}
-      </section>
+    <div className="dashboard-modern">
+      <div className="dashboard-heading">
+        <div><Subtitle1>Resumen financiero</Subtitle1><Caption1>{periodLabel}</Caption1></div>
+        <span className="dashboard-horizon">{payPeriod.pendingLabel.replace('Pendiente ', '')}</span>
+      </div>
 
-      <section className="content-grid dashboard-grid">
-        <Card className="content-card">
-          <div className="section-title">
-            <div>
-              <Subtitle1>Desglose confirmado de tarjetas</Subtitle1>
-              <Caption1>Crédito disponible separado del efectivo</Caption1>
-            </div>
+      <Card className="interest-summary-card">
+        <div className="interest-summary-main">
+          <div className="interest-summary-title"><Subtitle1>Intereses del corte</Subtitle1><Caption1>{interestCut.data?.period.label ?? payPeriod.label}</Caption1></div>
+          <strong className="interest-summary-total">{interestCut.isError ? 'No disponible' : formatMoney(interestCut.data?.summary.total ?? '0.00', 'DOP')}</strong>
+        </div>
+        <div className="interest-summary-breakdown">
+          {interestCut.isPending ? <Caption1>Calculando intereses…</Caption1> : interestCut.isError ? <Caption1>No se pudo cargar el desglose de intereses.</Caption1> : <>
+            <Caption1>Tarjetas {formatMoney(interestCut.data.summary.card_financing_interest, 'DOP')}</Caption1>
+            <Caption1>Préstamos {formatMoney(interestCut.data.summary.loan_interest, 'DOP')}</Caption1>
+            <Caption1>Sobregiro {formatMoney(interestCut.data.summary.overdraft_cut_charge, 'DOP')}</Caption1>
+          </>}
+        </div>
+        <a className="interest-summary-link" href="/interests">Ver detalle</a>
+      </Card>
+
+      {incomplete && <Card className="warning-inline"><strong>Completa tus próximos pagos</strong><Caption1>{(data.data_completeness?.missing_information ?? []).join('. ')}</Caption1></Card>}
+
+      <section className="dashboard-hero-grid">
+        <Card className="money-primary-card">
+          <div className="money-primary-header"><Caption1>{incomplete ? 'Dinero libre estimado' : 'Dinero disponible'}</Caption1><span className="status-dot">Estimado</span></div>
+          <div className="money-primary-value">{formatMoney(data.free_after_plan, 'DOP')}</div>
+          <div className="money-primary-caption">Puedes utilizarlo sin afectar los pagos proyectados.</div>
+          <div className="money-primary-grid">
+            <div><Caption1>Saldo real</Caption1><strong>{formatMoney(data.account_balance, 'DOP')}</strong></div>
+            <div><Caption1>Protección sugerida</Caption1><strong>{formatMoney(data.virtual_reserves, 'DOP')}</strong></div>
+            <div><Caption1>Restante previsto</Caption1><strong>{formatMoney(data.projection.ending_balance, 'DOP')}</strong></div>
           </div>
-          {cards.length === 0 ? (
-            <div className="empty-inline">No hay tarjetas registradas.</div>
-          ) : (
-            <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
-              {cards.map((card) => (
-                <details key={card.id} className="debt-action">
-                  <summary>{card.name} · confirmado · saldo {card.balance}</summary>
-                  <div style={{ display: 'grid', gap: '6px', padding: '8px 0', fontSize: '13px' }}>
-                    <div><strong>Límite aprobado:</strong> {card.approved_credit_limit}</div>
-                    <div><strong>Sobregiro autorizado:</strong> {card.authorized_overdraft_limit}</div>
-                    <div><strong>Capacidad restante:</strong> {card.remaining_total_capacity}</div>
-                    <div><strong>Sobregiro restante:</strong> {card.remaining_overdraft}</div>
-                    <div><strong>Estado del límite:</strong> {card.limit_status}</div>
-                  </div>
-                </details>
-              ))}
-            </div>
-          )}
         </Card>
 
-        <Card className="content-card">
-          <div className="section-title">
-            <div>
-              <Subtitle1>Deudas y reservas confirmadas</Subtitle1>
-              <Caption1>Importes registrados, no disponibles como efectivo</Caption1>
-            </div>
+        <Card className="quick-actions-card">
+          <Subtitle1>Acciones rápidas</Subtitle1>
+          <div className="dashboard-actions">
+            <Button appearance="primary" as="a" href="/income" icon={<AddRegular />}>Registrar ingreso</Button>
+            <Button appearance="secondary" as="a" href="/expenses" icon={<MoneyRegular />}>Registrar gasto</Button>
+            <Button appearance="secondary" as="a" href="/payments" icon={<CalendarRegular />}>Registrar pago</Button>
           </div>
-          <details className="debt-action" open>
-            <summary>Deudas ({debtBreakdown.length})</summary>
-            {debtBreakdown.length ? debtBreakdown.map((debt) => (
-              <div key={debt.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '13px' }}>
-                <span>{debt.name} · confirmado</span>
-                <strong>{debt.outstanding}</strong>
-              </div>
-            )) : <Caption1>No hay deudas registradas.</Caption1>}
-          </details>
-          <details className="debt-action" open>
-            <summary>Reservas ({reservesBreakdown.length})</summary>
-            {reservesBreakdown.length ? reservesBreakdown.map((reserve) => (
-              <div key={reserve.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '13px' }}>
-                <span>{reserve.name} · confirmado</span>
-                <strong>{reserve.currentAmount} / {reserve.targetAmount}</strong>
-              </div>
-            )) : <Caption1>No hay reservas registradas.</Caption1>}
-          </details>
         </Card>
       </section>
 
-      {/* Main Content Grid: Priority Payments & Budgets */}
-      <section className="content-grid dashboard-grid">
-        {/* Priority Commitment Payments */}
-        <Card className="content-card">
-          <div className="section-title">
-            <div>
-              <Subtitle1>Prioridad de Pagos de Compromisos</Subtitle1>
-              <Caption1>Próximos vencimientos ordenados por prioridad de fecha</Caption1>
-            </div>
-            <Link to="/commitments">Ver compromisos →</Link>
-          </div>
-          {summary.upcoming.length ? (
-            <div className="upcoming-list">
-              {summary.upcoming.map((item) => (
-                <div className="upcoming-row" key={item.label}>
-                  <div className="date-chip">{item.dueDate}</div>
-                  <div className="upcoming-name">
-                    <strong>{item.label}</strong>
-                    <Caption1>{item.kind}</Caption1>
-                  </div>
-                  <strong>{item.amount}</strong>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-inline">No hay compromisos pendientes próximos. ¡Estás al día!</div>
-          )}
+      <section className="dashboard-insight-grid">
+        <Card className="next-income-card">
+          <div className="section-title"><div><Subtitle1>Próximo ingreso</Subtitle1><Caption1>Antes de tus próximos vencimientos</Caption1></div></div>
+          {nextIncome ? <>
+            <div className="dashboard-next-amount">{formatMoney(nextIncome.remaining, 'DOP')}</div>
+            <div className="next-income-detail"><strong>{nextIncome.source}</strong><Caption1>{new Date(`${nextIncome.date}T12:00:00`).toLocaleDateString('es-DO', { dateStyle: 'long' })}</Caption1></div>
+            <Button appearance="subtle" as="a" href="/income" icon={<ArrowRightRegular />}>Confirmar recepción</Button>
+          </> : <div className="dashboard-empty-action"><Caption1>Todavía no tienes ingresos previstos.</Caption1><Button appearance="secondary" as="a" href="/income">Registrar ingreso</Button></div>}
         </Card>
 
-        {/* Budgets & Account Summaries */}
-        <Card className="content-card account-card">
+        <Card className="period-debt-card">
           <div className="section-title">
-            <div>
-              <Subtitle1>Presupuestos del Mes</Subtitle1>
-              <Caption1>Control de gastos por categoría</Caption1>
-            </div>
+            <div><Subtitle1>Corte de deuda</Subtitle1><Caption1>{payPeriod.label} · pagos del periodo</Caption1></div>
+            <strong className="period-debt-total">{formatMoney(periodDebt, 'DOP')}</strong>
           </div>
-          {summary.budgets && summary.budgets.length > 0 ? (
-            <div style={{ display: 'grid', gap: '12px', marginTop: '14px' }}>
-              {summary.budgets.map((b) => (
-                <div key={b.category} style={{ fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <strong>{b.category}</strong>
-                    <span>{b.spent} / {b.limit}</span>
-                  </div>
-                  <div style={{ background: 'var(--border-subtle)', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, b.percentage)}%`, background: b.percentage > 90 ? 'var(--color-status-danger)' : 'var(--primary)', height: '100%' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-inline" style={{ marginTop: '14px' }}>No hay presupuestos configurados para este mes.</div>
-          )}
-
-          <div style={{ display: 'grid', gap: '10px', marginTop: '24px' }}>
-            <Subtitle1 style={{ fontSize: '14px' }}>Saldos por Cuenta</Subtitle1>
-            {liquidAccounts.map((acc) => (
-              <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span>{acc.name}</span>
-                <strong style={{ color: 'var(--primary)' }}>{acc.balance}</strong>
+          {periodDebtBars.length === 0
+            ? <Caption1>No hay pagos pendientes en este periodo.</Caption1>
+            : <>
+              <div className="period-debt-chart" role="img" aria-label={`Pagos pendientes ${payPeriod.label.toLowerCase()}: ${formatMoney(periodDebt, 'DOP')}`}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={periodDebtBars} layout="vertical" margin={{ top: 2, right: 12, bottom: 2, left: 0 }}>
+                    <CartesianGrid horizontal={false} stroke="#2c333b" />
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="label" width={104} axisLine={false} tickLine={false} tick={{ fill: '#9aa4b2', fontSize: 11 }} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                      labelFormatter={(label, payload) => `${label}${payload?.[0]?.payload?.dueDate ? ` · ${payload[0].payload.dueDate}` : ''}`}
+                      formatter={(value) => [formatMoney(String(value ?? 0), 'DOP'), 'Pendiente']}
+                      contentStyle={{ background: '#181c21', border: '1px solid #30363e', borderRadius: 6, color: '#edf2f7' }}
+                    />
+                    <Bar dataKey="amount" name="Pendiente" fill="#62a9a1" radius={[0, 4, 4, 0]} maxBarSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+              {data.obligations.length > periodDebtBars.length && <Caption1>Mostrando {periodDebtBars.length} de {data.obligations.length} pagos del periodo.</Caption1>}
+            </>}
+        </Card>
+      </section>
 
-          <Link className="account-link" to="/transactions">
-            Revisar historial de movimientos <ArrowUpRightRegular />
-          </Link>
+      <section className="dashboard-bottom-grid">
+        <Card className="payments-card">
+          <div className="section-title"><div><Subtitle1>Próximos pagos</Subtitle1><Caption1>Ordenados por fecha de vencimiento</Caption1></div><Button appearance="subtle" as="a" href="/payments">Ver todos</Button></div>
+          {nextPayments.length === 0 ? <div className="dashboard-empty-action"><Caption1>No hay pagos pendientes en el horizonte.</Caption1><Button appearance="secondary" as="a" href="/payments">Agregar pago</Button></div> : <div className="dashboard-payment-list">
+            {nextPayments.map((payment) => <div className="dashboard-payment-row" key={payment.id ?? `${payment.commitment_id}-${payment.due_date}`}>
+              <div className="payment-date"><strong>{new Date(`${payment.due_date}T12:00:00`).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' })}</strong></div>
+              <div className="payment-info"><strong>{payment.name}</strong><Caption1>{payment.overdue ? 'Pago vencido' : 'Pendiente'} · {payment.coverage_status === 'covered' ? 'Cubierto' : payment.coverage_status === 'partially_covered' ? 'Cobertura parcial' : 'Sin cobertura'}</Caption1></div>
+              <strong className="payment-amount">{formatMoney(payment.amount_pending ?? payment.amount_due, 'DOP')}</strong>
+            </div>)}
+          </div>}
+        </Card>
+
+        <Card className="secondary-summary-card">
+          <Subtitle1>Resumen del periodo</Subtitle1>
+          <div className="dashboard-summary-grid">
+            <div><Caption1>Ingresos previstos</Caption1><strong>{formatMoney(data.summary?.expected_income ?? data.projection.expected_total, 'DOP')}</strong></div>
+            <div><Caption1>Compromisos</Caption1><strong>{formatMoney(data.summary?.pending_obligations ?? data.projection.commitments_total, 'DOP')}</strong></div>
+            <div><Caption1>Faltante máximo</Caption1><strong>{formatMoney(data.summary?.maximum_shortfall ?? data.projection.peak_shortfall, 'DOP')}</strong></div>
+            <div><Caption1>Deuda registrada</Caption1><strong>{dashboard.isError ? 'No disponible' : (totalDebt ?? 'Importe no disponible')}</strong></div>
+          </div>
         </Card>
       </section>
     </div>

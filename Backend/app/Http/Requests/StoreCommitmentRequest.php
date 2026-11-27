@@ -17,6 +17,13 @@ class StoreCommitmentRequest extends FormRequest
                     $validator->errors()->add('limit_status', 'Las reglas especiales requieren documentación contractual con fuente y referencia.');
                 }
             }
+
+            if ($this->input('type') === 'credit_card' && $this->input('card_payment_mode') === 'minimum') {
+                $minimumPayment = $this->input('minimum_payment');
+                if (!is_numeric($minimumPayment) || (float) $minimumPayment <= 0) {
+                    $validator->errors()->add('minimum_payment', 'Indica un pago mínimo bancario mayor que cero para usar esta modalidad.');
+                }
+            }
         });
     }
 
@@ -34,6 +41,7 @@ class StoreCommitmentRequest extends FormRequest
                 'statement_day' => ['required', 'integer', 'between:1,31'],
                 'payment_grace_days' => ['required', 'integer', 'between:1,31'],
                 'statement_balance' => ['nullable', 'numeric', 'min:0'],
+                'card_payment_mode' => ['nullable', 'in:minimum,statement'],
                 'interest_rate' => ['nullable', 'numeric', 'between:0,100'],
                 'minimum_payment' => ['nullable', 'numeric', 'gte:0'],
                 'credit_limit' => ['nullable', 'numeric', 'min:0'],

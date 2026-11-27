@@ -105,6 +105,53 @@ class CreditCardPaymentInstrumentTest extends TestCase
         $this->assertEquals('10000.00', (string) $bankCash);
     }
 
+    public function test_updating_credit_card_minimum_payment_updates_the_linked_debt(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/v1/commitments', [
+            'name' => 'Visa Edit Test',
+            'type' => 'credit_card',
+            'reference_number' => '4321',
+            'institution' => 'Banco Popular',
+            'current_balance' => '2000.00',
+            'statement_day' => 15,
+            'payment_grace_days' => 21,
+            'interest_rate' => '24.000',
+            'approved_credit_limit' => '10000.00',
+            'minimum_payment' => '100.00',
+        ])->assertCreated();
+
+        $commitment = Commitment::where('user_id', $user->id)->where('name', 'Visa Edit Test')->firstOrFail();
+        $debt = Debt::where('user_id', $user->id)->where('name', 'Visa Edit Test')->firstOrFail();
+
+        $response = $this->withToken($token)->putJson("/api/v1/commitments/{$commitment->id}", [
+            'name' => 'Visa Edit Test',
+            'type' => 'credit_card',
+            'reference_number' => '4321',
+            'institution' => 'Banco Popular',
+            'current_balance' => '2500.00',
+            'statement_balance' => '2300.00',
+            'minimum_payment' => '175.00',
+            'statement_day' => 16,
+            'payment_grace_days' => 22,
+            'interest_rate' => '25.000',
+            'approved_credit_limit' => '12000.00',
+            'authorized_overdraft_limit' => '500.00',
+            'overdraft_fee_type' => 'cutoff_fixed',
+            'overdraft_fee_amount' => '200.00',
+            'overdraft_fee_percentage' => '0.00',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.minimum_payment', '175.00')
+            ->assertJsonPath('data.minimum_payment_confirmed', true);
+        $this->assertSame('175.00', (string) $debt->fresh()->minimum_payment);
+        $this->assertTrue($debt->fresh()->minimum_payment_confirmed);
+        $this->assertSame('2500.00', (string) $debt->fresh()->outstanding_amount);
+    }
+
     public function test_paying_credit_card_debt_from_bank_account_reduces_bank_cash_and_recovers_credit(): void
     {
         $user = User::factory()->create();
@@ -208,7 +255,7 @@ class CreditCardPaymentInstrumentTest extends TestCase
             ->assertJsonPath('error.details.account_id.0', 'Una tarjeta no puede utilizarse como origen para pagar un préstamo o otra tarjeta. Use una cuenta líquida compatible.');
     }
 
-    public function test_payment_exceeding_credit_card_available_limit_fails_authorization(): void
+    public function test_payment_can_use_authorized_overdraft_but_cannot_exceed_total_capacity(): void
     {
         $user = User::factory()->create();
         $token = $user->createToken('test-token')->plainTextToken;
@@ -223,6 +270,7 @@ class CreditCardPaymentInstrumentTest extends TestCase
             'statement_day' => 15,
             'payment_grace_days' => 21,
             'credit_limit' => '50000.00',
+            'authorized_overdraft_limit' => '10000.00',
         ]);
 
         $cardAccount = Account::where('user_id', $user->id)->where('name', 'Visa Limit Test')->firstOrFail();
@@ -245,7 +293,7 @@ class CreditCardPaymentInstrumentTest extends TestCase
             'status' => 'scheduled',
         ]);
 
-        // Attempt to pay RD$35,000 with card that only has RD$30,000 available credit
+        // A payment above the ordinary credit limit can use the authorized overdraft.
         $response = $this->withToken($token)->postJson("/api/v1/commitments/{$largeCommitment->id}/occurrences/{$occurrence->id}/payments", [
             'amount' => '35000.00',
             'account_id' => $cardAccount->id,
@@ -253,7 +301,36 @@ class CreditCardPaymentInstrumentTest extends TestCase
             'idempotency_key' => '77777777-8888-9999-0000-111111111111',
         ]);
 
-        $response->assertStatus(422);
-        $this->assertStringContainsString('excede su límite de crédito disponible', $response->json('error.details.account_id.0'));
+        $response->assertCreated();
+        $cardDebt = Debt::where('user_id', $user->id)->where('name', 'Visa Limit Test')->firstOrFail();
+        $this->assertSame('55000.00', (string) $cardDebt->fresh()->outstanding_amount);
+
+        $excessCommitment = Commitment::create([
+            'user_id' => $user->id,
+            'name' => 'Mantenimiento adicional',
+            'type' => 'utility',
+            'amount' => '6000.00',
+            'frequency' => 'once',
+            'next_due_date' => now()->addDays(2)->toDateString(),
+            'is_active' => true,
+        ]);
+        $excessOccurrence = CommitmentOccurrence::create([
+            'user_id' => $user->id,
+            'commitment_id' => $excessCommitment->id,
+            'amount_due' => '6000.00',
+            'due_date' => now()->addDays(2)->toDateString(),
+            'status' => 'scheduled',
+        ]);
+
+        $excessResponse = $this->withToken($token)->postJson("/api/v1/commitments/{$excessCommitment->id}/occurrences/{$excessOccurrence->id}/payments", [
+            'amount' => '6000.00',
+            'account_id' => $cardAccount->id,
+            'paid_at' => now()->toDateString(),
+            'idempotency_key' => '88888888-9999-0000-1111-222222222222',
+        ]);
+
+        $excessResponse->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+        $this->assertStringContainsString('capacidad total autorizada', $excessResponse->json('error.details.account_id.0'));
     }
 }

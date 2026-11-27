@@ -38,6 +38,17 @@ export interface ImportedTransaction {
   financial_transaction_id: number | null;
 }
 
+export interface DebtHistoryPoint {
+  month: string;
+  label: string;
+  total_debt: string;
+  card_debt: string;
+  loan_debt: string;
+  other_debt: string;
+  captured_at: string;
+  source: 'month_end' | 'current_estimate';
+}
+
 export interface DashboardSummary {
   balances: {
     real: string;
@@ -62,7 +73,9 @@ export interface DashboardSummary {
   };
   budgets?: BudgetRecord[];
   income: { expected: string; received: string };
+  activeCommitmentsCount?: number;
   commitments: { dueSoon: string; dueSoonLabel: string };
+  commitmentGroups?: Array<{ month: string; label: string; total: string; items: Array<{ source: 'compromiso' | 'tarjeta' | 'prestamo'; name: string; date: string; amount: string }> }>;
   upcoming: Array<{ label: string; dueDate: string; amount: string; kind: string }>;
 }
 
@@ -70,6 +83,8 @@ export interface IncomeRecord {
   id?: string;
   source: string;
   amount: string;
+  amountDecimal?: string;
+  receivedAmountDecimal?: string;
   expectedDate: string;
   status: string;
   receivedAmount?: string;
@@ -97,6 +112,9 @@ export interface CommitmentRecord {
   institution?: string | null;
   currentBalance?: string | null;
   statementBalance?: string | null;
+  cardPaymentMode?: 'minimum' | 'statement';
+  minimumPayment?: string | null;
+  minimumPaymentConfirmed?: boolean;
   statementDay?: number | null;
   paymentGraceDays?: number | null;
   interestRate?: string | null;
@@ -125,6 +143,7 @@ export interface CommitmentRecord {
   cardBenefits?: string[] | null;
   cardPaymentMethods?: string[] | null;
   isActive?: boolean;
+  standaloneDebt?: boolean;
   debtId?: string | null;
   accountId?: string | null;
   termMonths?: number | null;
@@ -142,6 +161,7 @@ export interface CommitmentRecord {
   name: string;
   amount: string;
   dueDate: string;
+  dueDateIso?: string | null;
   status: string;
 }
 
@@ -152,6 +172,7 @@ export interface DebtRecord {
   outstanding: string;
   minimum: string | null;
   dueDate: string;
+  dueDateIso?: string | null;
   minimumConfirmed?: boolean;
   lastFour?: string | null;
   approvedCreditLimit?: string | null;
@@ -165,6 +186,16 @@ export interface DebtRecord {
   specialRulesReference?: string | null;
   commitmentId?: string | null;
   accountId?: string | null;
+  cardProductName?: string | null;
+  institution?: string | null;
+  statementBalance?: string | null;
+  statementDay?: number | null;
+  paymentGraceDays?: number | null;
+  nextCutoffDate?: string | null;
+  effectiveDueDate?: string | null;
+  referenceNumber?: string | null;
+  maturityDate?: string | null;
+  remainingInstallments?: number | null;
   termMonths?: number | null;
   amortizationType?: string | null;
 }
@@ -216,6 +247,11 @@ export interface AccountRecord {
   currency: string;
   balance: string;
   debtId?: string | null;
+  approvedCreditLimit?: string | null;
+  authorizedOverdraftLimit?: string | null;
+  outstandingAmount?: string | null;
+  availableCreditCapacity?: string | null;
+  lastFour?: string | null;
 }
 
 export interface ExpenseRecord {
@@ -244,12 +280,61 @@ export interface CashFlowReport {
   categories: Array<{ category: string; forecast: string; actual: string; variance: string }>;
 }
 
+export type PayFrequency = 'weekly' | 'biweekly' | 'monthly';
+
 export interface Preferences {
   currency: string;
   timezone: string;
   reminders: number;
   weekStarts: string;
   appearance: 'light' | 'dark' | 'system';
+  payFrequency: PayFrequency;
+  profilePhotoUrl: string | null;
+  piggyBankPhotoUrl: string | null;
+}
+
+export interface InterestCutReport {
+  period: {
+    pay_frequency: PayFrequency;
+    label: string;
+    starts_on: string;
+    ends_on: string;
+    calculated_through: string;
+    days_elapsed: number;
+  };
+  summary: {
+    card_financing_interest: string;
+    loan_interest: string;
+    financing_interest: string;
+    overdraft_cut_charge: string;
+    total: string;
+  };
+  items: Array<{
+    id: string;
+    debt_id: number | null;
+    name: string;
+    kind: 'credit_card' | 'loan';
+    kind_label: string;
+    balance: string;
+    balance_source: 'current_balance' | 'current_balance_and_period_movements';
+    statement_balance: string | null;
+    financed_balance: string;
+    projected_financed_balance: string;
+    daily_interest_if_unpaid: string;
+    financing_starts_on: string | null;
+    financing_status: 'accruing' | 'grace_period' | 'paid' | 'statement_unavailable';
+    annual_rate: string;
+    rate_source: string;
+    daily_interest_rate: string;
+    financing_interest: string;
+    financing_interest_label: string;
+    financing_interest_detail: string;
+    overdraft_cut_charge: string;
+    overdraft_charge_status: 'posted' | 'estimated' | 'not_configured' | 'missing_limit' | 'not_applicable';
+    overdraft_charge_detail: string;
+    total: string;
+    rate_missing: boolean;
+  }>;
 }
 
 export interface ChatMessageItem {
@@ -320,9 +405,15 @@ export interface FinancialPlan {
   suggested_total: string;
   free_after_plan: string;
   uncovered_total: string;
+  data_completeness?: { status: 'complete' | 'incomplete'; missing_information: string[] };
+  summary?: { expected_income: string; pending_obligations: string; maximum_shortfall: string; projected_closing_balance: string; uncovered_total: string };
+  funding_sources?: Array<{ id: string; type: 'current_balance' | 'expected_income'; date: string; currency: string; amount_original: string; amount_remaining: string; name: string }>;
+  allocations?: Array<{ id: string; obligation_id: string; source_id: string; amount: string; availability_date: string; due_date: string; coverage_type: 'current' | 'expected_income'; status: string }>;
+  recommendations?: string[];
   obligations: Array<{
-    occurrence_id: number;
-    commitment_id: number;
+    id?: string;
+    occurrence_id: number | null;
+    commitment_id: number | null;
     name: string;
     type: string;
     due_date: string;
@@ -336,7 +427,18 @@ export interface FinancialPlan {
     estimated_30_day_interest_if_unpaid: string;
     estimated_late_fee: string;
     reason: string;
+    amount_pending?: string;
+    coverage_status?: 'covered' | 'partially_covered' | 'uncovered';
   }>;
   expected_incomes: Array<{ source: string; date: string; remaining: string }>;
   warnings: string[];
+  projection: {
+    expected_total: string;
+    commitments_total: string;
+    ending_balance: string;
+    free_to_spend?: string;
+    peak_shortfall: string;
+    first_shortfall_date: string | null;
+    events: Array<{ date: string; due_date?: string; kind: 'income' | 'payment'; name: string; amount: string; balance: string; occurrence_id?: number; timing_uncertain: boolean }>;
+  };
 }

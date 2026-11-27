@@ -3,16 +3,16 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\RecordIncomeReceipt;
+use App\Actions\ReversePayment;
+use App\Actions\RecalculateCommitmentAmortization;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreIncomeRequest;
 use App\Http\Requests\StoreReceiptRequest;
 use App\Models\Account;
-use App\Models\FinancialTransaction;
 use App\Models\Income;
 use App\Services\MoneyFormatter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class IncomeController extends Controller
 {
@@ -40,7 +40,14 @@ class IncomeController extends Controller
 
     public function store(StoreIncomeRequest $request): JsonResponse
     {
-        $income = Income::query()->create($request->validated() + ['user_id' => $request->user()->id]);
+        $validated = $request->validated();
+        $frequency = $validated['frequency'] ?? 'once';
+        $validated['frequency'] = $frequency;
+        if ($frequency !== 'once') {
+            $validated['recurrence_key'] = $validated['recurrence_key'] ?? (string) \Illuminate\Support\Str::uuid();
+            $validated['recurrence_day'] ??= (int) \Illuminate\Support\Carbon::parse($validated['expected_date'])->day;
+        }
+        $income = Income::query()->create($validated + ['user_id' => $request->user()->id]);
         return response()->json(['data' => $this->serialize($income)], 201);
     }
 
@@ -52,18 +59,24 @@ class IncomeController extends Controller
         return response()->json(['data' => $this->serialize($record->refresh())]);
     }
 
-    public function destroy(Request $request, int $income): JsonResponse
+    public function destroy(Request $request, int $income, ReversePayment $reversePayment, RecalculateCommitmentAmortization $amortization): JsonResponse
     {
         $record = Income::query()->where('user_id', $request->user()->id)->whereKey($income)->firstOrFail();
-        DB::transaction(function () use ($record) {
-            foreach ($record->payments as $payment) {
-                FinancialTransaction::query()->where('payment_id', $payment->id)->delete();
-                $payment->delete();
-            }
-            $record->delete();
-        });
+        $hasReceivedAmounts = $record->payments()->whereNull('reversed_at')->exists();
 
-        return response()->json(['message' => 'Ingreso eliminado correctamente']);
+        if ($hasReceivedAmounts) {
+            foreach ($record->payments()->whereNull('reversed_at')->get() as $payment) {
+                $reversePayment->execute($request->user(), $payment, [
+                    'reason' => 'Corrección o cancelación de ingreso recibido',
+                    'idempotency_key' => 'income-cancel:' . $payment->id,
+                ], $amortization);
+            }
+            $record->update(['notes' => trim(($record->notes ? $record->notes . "\n" : '') . 'Ingreso cancelado; recepciones revertidas y conservadas en historial.')]);
+            return response()->json(['message' => 'Ingreso cancelado y recepciones revertidas; el historial se conserva']);
+        }
+
+        $record->delete();
+        return response()->json(['message' => 'Ingreso previsto eliminado correctamente']);
     }
 
     public function receipt(StoreReceiptRequest $request, int $income, RecordIncomeReceipt $action, MoneyFormatter $money): JsonResponse

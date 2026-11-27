@@ -13,8 +13,18 @@ Schedule::command('finance:send-due-reminders')
     ->timezone('America/Santo_Domingo')
     ->withoutOverlapping();
 
+Schedule::command('finance:generate-income-occurrences')
+    ->dailyAt('00:10')
+    ->timezone('America/Santo_Domingo')
+    ->withoutOverlapping();
+
 Schedule::command('finance:generate-occurrences')
     ->daily()
+    ->timezone('America/Santo_Domingo')
+    ->withoutOverlapping();
+
+Schedule::command('finance:capture-debt-history')
+    ->monthlyOn(28, '23:55')
     ->timezone('America/Santo_Domingo')
     ->withoutOverlapping();
 

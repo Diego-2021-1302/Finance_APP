@@ -14,6 +14,37 @@ paths:
       responses:
         "200": { description: API and database health }
         "503": { description: Essential dependency is unavailable }
+  /api/v1/financial-plan:
+    get:
+      summary: Central financial planning projection
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        "200":
+          description: Coordinated liquidity, obligations, allocations and projection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      currency: { type: string, example: DOP }
+                      account_balance: { type: string, example: "81.28" }
+                      free_after_plan: { type: string, example: "81.28" }
+                      data_completeness:
+                        type: object
+                        properties:
+                          status: { type: string, enum: [complete, incomplete] }
+                          missing_information: { type: array, items: { type: string } }
+                      funding_sources: { type: array, items: { type: object } }
+                      obligations: { type: array, items: { type: object } }
+                      allocations: { type: array, items: { type: object } }
+                      projection: { type: object }
+                      recommendations: { type: array, items: { type: string } }
   /api/v1/auth/register:
     post:
       security: []

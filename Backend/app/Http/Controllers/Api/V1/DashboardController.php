@@ -9,6 +9,7 @@ use App\Models\FinancialTransaction;
 use App\Models\Income;
 use App\Models\Payment;
 use App\Models\Reserve;
+use App\Models\MonthlyDebtHistory;
 use App\Models\Budget;
 use App\Models\Expense;
 use App\Services\MoneyFormatter;
@@ -18,6 +19,50 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
+    public function debtHistory(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $history = MonthlyDebtHistory::query()
+            ->where('user_id', $user->id)
+            ->orderBy('month')
+            ->get()
+            ->map(fn (MonthlyDebtHistory $item) => [
+                'month' => $item->month,
+                'label' => \Illuminate\Support\Carbon::createFromFormat('Y-m', $item->month)
+                    ->locale('es')
+                    ->translatedFormat('M Y'),
+                'total_debt' => (string) $item->total_debt,
+                'card_debt' => (string) $item->card_debt,
+                'loan_debt' => (string) $item->loan_debt,
+                'other_debt' => (string) $item->other_debt,
+                'captured_at' => $item->captured_at->toDateString(),
+                'source' => $item->source,
+            ]);
+
+        $currentMonth = now()->format('Y-m');
+        $debts = \App\Models\Debt::query()->where('user_id', $user->id)->get();
+        $card = $debts->where('kind', 'credit_card')->sum(fn ($debt) => (float) $debt->outstanding_amount);
+        $loan = $debts->where('kind', 'loan')->sum(fn ($debt) => (float) $debt->outstanding_amount);
+        $other = $debts->whereNotIn('kind', ['credit_card', 'loan'])->sum(fn ($debt) => (float) $debt->outstanding_amount);
+
+        $history = $history
+            ->reject(fn (array $item) => $item['month'] === $currentMonth)
+            ->values();
+        $history->push([
+            'month' => $currentMonth,
+            'label' => now()->locale('es')->translatedFormat('M Y'),
+            'total_debt' => number_format($card + $loan + $other, 2, '.', ''),
+            'card_debt' => number_format($card, 2, '.', ''),
+            'loan_debt' => number_format($loan, 2, '.', ''),
+            'other_debt' => number_format($other, 2, '.', ''),
+            'captured_at' => now()->toDateString(),
+            'source' => 'current_estimate',
+        ]);
+
+        $series = $history->sortBy('month')->take(-12)->values();
+        return response()->json(['data' => $series]);
+    }
+
     public function summary(Request $request, MoneyFormatter $money): JsonResponse
     {
         $user = $request->user();
@@ -125,6 +170,102 @@ class DashboardController extends Controller
             }
         }
 
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
+        $monthOccurrences = CommitmentOccurrence::query()
+            ->where('user_id', $user->id)
+            ->whereBetween('due_date', [$monthStart, $monthEnd])
+            ->where('status', '!=', 'paid')
+            ->with(['commitment', 'payments'])
+            ->orderBy('due_date')
+            ->get();
+
+        $commitmentGroups = [];
+
+        foreach ($monthOccurrences as $occurrence) {
+            $month = $occurrence->due_date->format('Y-m');
+            $paid = '0.00';
+            foreach ($occurrence->payments->whereNull('reversed_at') as $payment) {
+                $paid = bcadd($paid, (string) $payment->amount, 2);
+            }
+            $remaining = bcsub((string) $occurrence->amount_due, $paid, 2);
+            if (bccomp($remaining, '0.00', 2) > 0) {
+                $commitmentGroups[$month]['total'] = bcadd($commitmentGroups[$month]['total'] ?? '0.00', $remaining, 2);
+                $commitmentGroups[$month]['items'][] = [
+                    'source' => 'compromiso',
+                    'name' => $occurrence->commitment?->name ?? 'Compromiso',
+                    'date' => $occurrence->due_date->toDateString(),
+                    'amount' => $remaining,
+                ];
+            }
+        }
+
+        $debtItems = \App\Models\Debt::query()
+            ->where('user_id', $user->id)
+            ->where('outstanding_amount', '>', 0)
+            ->orderBy('due_date')
+            ->get();
+
+        foreach ($debtItems as $debt) {
+            if (!$debt->due_date) continue;
+            if (bccomp((string) $debt->outstanding_amount, '0.00', 2) <= 0) continue;
+
+            $today = now()->startOfDay();
+
+            $amount = $debt->kind === 'credit_card'
+                ? (string) ($debt->statement_balance ?? '0.00')
+                : ($debt->kind === 'loan'
+                    ? (string) ($debt->minimum_payment ?? '0.00')
+                    : '0.00');
+
+            if (bccomp($amount, '0.00', 2) <= 0) continue;
+
+            $cursor = $debt->due_date->copy()->startOfDay();
+            if ($cursor->lt($today) && $debt->kind === 'credit_card') {
+                $cursor = $today->copy()->startOfMonth()->day(min(1, $today->daysInMonth));
+            }
+            $limit = $debt->maturity_date
+                ? \Illuminate\Support\Carbon::parse($debt->maturity_date)->startOfDay()
+                : now()->copy()->startOfDay()->addMonths(12);
+            $steps = 0;
+
+            while ($cursor->lte($limit) && $steps < 120) {
+                $month = $cursor->format('Y-m');
+                $commitmentGroups[$month]['total'] = bcadd($commitmentGroups[$month]['total'] ?? '0.00', $amount, 2);
+                $commitmentGroups[$month]['items'][] = [
+                    'source' => $debt->kind === 'credit_card' ? 'tarjeta' : 'prestamo',
+                    'name' => $debt->name,
+                    'date' => $cursor->toDateString(),
+                    'amount' => $amount,
+                ];
+
+                if ($debt->kind === 'credit_card') {
+                    break;
+                } elseif ($debt->kind === 'loan' && $debt->amortization_type === 'biweekly') {
+                    $cursor = $cursor->copy()->addDays(15);
+                } elseif ($debt->kind === 'loan') {
+                    $cursor = \App\Services\LoanPaymentSchedule::addMonthKeepingDay($cursor);
+                } else {
+                    break;
+                }
+                $steps++;
+            }
+        }
+
+        ksort($commitmentGroups);
+        $formattedGroups = collect($commitmentGroups)->map(function (array $group, string $month) use ($money) {
+            $start = \Illuminate\Support\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+            return [
+                'month' => $month,
+                'label' => $start->locale('es')->translatedFormat('F Y'),
+                'total' => $money->dop($group['total']),
+                'items' => collect($group['items'])->map(function (array $item) use ($money) {
+                    $item['amount'] = $money->dop($item['amount']);
+                    return $item;
+                })->values(),
+            ];
+        })->values();
+
         $data = [
             'balances' => [
                 'real' => $money->dop($confirmed),
@@ -156,6 +297,11 @@ class DashboardController extends Controller
                 'expected' => $money->dop($expected),
                 'received' => $money->dop($received),
             ],
+            'commitmentGroups' => $formattedGroups,
+            'activeCommitmentsCount' => \App\Models\Commitment::query()
+                ->where('user_id', $user->id)
+                ->where('is_active', true)
+                ->count(),
             'commitments' => [
                 'dueSoon' => $money->dop($dueSoon),
                 'dueSoonLabel' => $occurrences->first()?->commitment?->name ?? 'Sin compromisos próximos',

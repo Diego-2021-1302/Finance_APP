@@ -11,6 +11,7 @@ use App\Models\DebtBalanceMovement;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\CommitmentRecurrence;
+use App\Services\CreditCardAuthorizationEngine;
 use App\Services\DebtBalanceLedger;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +22,7 @@ class RecordCommitmentPayment
 {
     public function __construct(
         private readonly CommitmentRecurrence $recurrence,
+        private readonly CreditCardAuthorizationEngine $authorizationEngine,
         private readonly DebtBalanceLedger $balanceLedger,
     ) {}
 
@@ -60,15 +62,17 @@ class RecordCommitmentPayment
                     ->lockForUpdate()
                     ->first();
 
-                if ($cardDebt && $cardDebt->credit_limit !== null) {
-                    $availableCredit = bcsub((string) $cardDebt->credit_limit, (string) $cardDebt->outstanding_amount, 2);
-                    if (bccomp((string) $input['amount'], $availableCredit, 2) === 1) {
-                        $formattedAvailable = number_format((float) $availableCredit, 2, '.', ',');
-                        throw ValidationException::withMessages([
-                            'account_id' => [sprintf('La tarjeta "%s" excede su límite de crédito disponible. (Disponible: RD$ %s)', $account->name, $formattedAvailable)],
-                        ]);
-                    }
+                if (!$cardDebt) {
+                    throw ValidationException::withMessages([
+                        'account_id' => ['No se encontró la deuda vinculada a la tarjeta seleccionada como medio de pago.'],
+                    ]);
                 }
+
+                $this->authorizationEngine->authorizeTransaction(
+                    $cardDebt,
+                    (string) $input['amount'],
+                    (string) $input['idempotency_key'],
+                );
             }
 
             if (!$isAmortized && bccomp((string) $input['amount'], $remaining, 2) === 1) {

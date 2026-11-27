@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Caption1, Field, Input, MessageBar, MessageBarBody, Subtitle1 } from '@fluentui/react-components';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
+import { financialQueryKeys } from '../api/queryKeys';
 import { EmptyState, ErrorState, LoadingState } from '../components/DataState';
+import { getPayPeriod } from '../utils/payPeriod';
 
 export function PlanningPage() {
   const queryClient = useQueryClient();
@@ -11,8 +13,15 @@ export function PlanningPage() {
   const [csvAccountId, setCsvAccountId] = useState('');
   const [csvContent, setCsvContent] = useState('');
 
-  const [planDays, setPlanDays] = useState(30);
-  const financialPlan = useQuery({ queryKey: ['financial-plan', planDays], queryFn: () => api.getFinancialPlan(planDays) });
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const payPeriod = getPayPeriod(settings.data?.payFrequency);
+  const [planDaysOverride, setPlanDaysOverride] = useState<number | null>(null);
+  const planDays = planDaysOverride ?? payPeriod.days;
+  const financialPlan = useQuery({
+    queryKey: financialQueryKeys.financialPlan(planDays),
+    queryFn: () => api.getFinancialPlan(planDays),
+    enabled: settings.isSuccess,
+  });
 
   const budgets = useQuery({ queryKey: ['budgets', yearMonth], queryFn: () => api.listBudgets(yearMonth) });
   const reserves = useQuery({ queryKey: ['reserves'], queryFn: api.listReserves });
@@ -21,7 +30,7 @@ export function PlanningPage() {
   const imports = useQuery({ queryKey: ['imports'], queryFn: api.listImports });
 
   const invalidatePlanning = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['budgets', 'reserves', 'imports', 'accounts', 'dashboard-summary', 'financial-plan'] });
+    await queryClient.invalidateQueries();
   };
 
   const createBudget = useMutation({
@@ -69,9 +78,10 @@ export function PlanningPage() {
     }, { onSuccess: () => form.reset() });
   }
 
-  if (budgets.isPending || reserves.isPending || commitments.isPending || accounts.isPending || imports.isPending) {
+  if (settings.isPending || budgets.isPending || reserves.isPending || commitments.isPending || accounts.isPending || imports.isPending) {
     return <LoadingState />;
   }
+  if (settings.isError) return <ErrorState onRetry={() => void settings.refetch()} />;
   if (budgets.isError || reserves.isError || commitments.isError || accounts.isError || imports.isError) {
     return <ErrorState onRetry={() => void Promise.all([budgets.refetch(), reserves.refetch(), commitments.refetch(), accounts.refetch(), imports.refetch()])} />;
   }
@@ -85,9 +95,9 @@ export function PlanningPage() {
         <Subtitle1>Plan de distribución de ingresos y compromisos</Subtitle1>
         <p>Recomendación orientativa: cubre cuotas y mínimos confirmados, y luego prioriza saldos con mayor costo financiero. No realiza pagos ni mueve dinero.</p>
         <Field label="Horizonte de planificación">
-          <select value={planDays} onChange={(event) => setPlanDays(Number(event.target.value))}>
-            <option value={7}>7 días</option><option value={15}>15 días</option>
-            <option value={30}>30 días</option><option value={60}>60 días</option><option value={90}>90 días</option>
+          <select value={planDays} onChange={(event) => setPlanDaysOverride(Number(event.target.value))}>
+            <option value={7}>7 días · semanal</option><option value={15}>15 días · quincenal</option>
+            <option value={30}>30 días · mensual</option><option value={60}>60 días</option><option value={90}>90 días</option>
           </select>
         </Field>
         {financialPlan.isPending ? <LoadingState /> : financialPlan.isError ? <ErrorState onRetry={() => void financialPlan.refetch()} /> : plan && (

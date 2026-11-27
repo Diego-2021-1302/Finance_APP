@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Caption1, Field, Input, MessageBar, MessageBarBody, Subtitle1, Tab, TabList } from '@fluentui/react-components';
 import { useState, type FormEvent } from 'react';
@@ -5,11 +6,12 @@ import { useNavigate } from 'react-router-dom';
 import { api, createUuid } from '../api';
 import { EmptyState, ErrorState, LoadingState } from '../components/DataState';
 import { FinanceTable } from '../components/FinanceTable';
-import { DebtBalancesSection } from './DebtsPage';
 import { CardCapacityPanel } from '../components/CardCapacityPanel';
 
 import type { AccountRecord, CalendarEvent, CommitmentRecord, ExpenseRecord, IncomeRecord, TransactionRecord, TransferRecord } from '../types';
 import { commitmentInvalidationKeys, financialQueryKeys } from '../api/queryKeys';
+import { formatMoney, minorToDecimal, sumDecimals } from '../utils/money';
+import { getPayPeriod } from '../utils/payPeriod';
 
 type RecordKind = 'income' | 'expenses' | 'transfers' | 'commitments' | 'calendar' | 'transactions' | 'accounts';
 type CommitmentType = NonNullable<CommitmentRecord['type']>;
@@ -25,6 +27,18 @@ const commitmentTypes: Array<{ value: CommitmentType; label: string }> = [
 const billCategories = ['Electricidad', 'Agua', 'Internet', 'Teléfono', 'Streaming', 'Gas', 'Seguro', 'Alquiler', 'Educación', 'Alimentación', 'Combustible', 'Otros'];
 const now = new Date();
 const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+function toDateInputValue(value?: string | null): string {
+  if (!value) return '';
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parts = value.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  if (!parts) return '';
+  const months: Record<string, number> = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sept: 9, sep: 9, oct: 10, nov: 11, dic: 12 };
+  const month = months[parts[2].toLowerCase().slice(0, 3)];
+  if (!month) return '';
+  return `${parts[3]}-${String(month).padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+}
 function cardCyclePreview(day: number, grace: number, reference = new Date()) {
   if (!Number.isInteger(day) || day < 1 || day > 31 || !Number.isInteger(grace) || grace < 1 || grace > 31) return null;
   // Use UTC calendar arithmetic to avoid daylight-saving shifts.
@@ -42,6 +56,44 @@ function cardCyclePreview(day: number, grace: number, reference = new Date()) {
 function splitManualList(value: FormDataEntryValue | null): string[] | null {
   const items = String(value ?? '').split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
   return items.length ? items : null;
+}
+
+type CardPaymentMode = 'minimum' | 'statement' | 'current' | 'other';
+
+function amountInputValue(value?: string | null): string {
+  return value?.replace(/[^\d.]/g, '') ?? '';
+}
+
+function CreditCardPaymentFields({ card }: { card: CommitmentRecord }) {
+  const amounts = {
+    minimum: amountInputValue(card.minimumPayment),
+    statement: amountInputValue(card.statementBalance),
+    current: amountInputValue(card.currentBalance),
+  };
+  const [mode, setMode] = useState<CardPaymentMode>(() =>
+    amounts.minimum ? 'minimum' : amounts.statement ? 'statement' : amounts.current ? 'current' : 'other',
+  );
+  const [otherAmount, setOtherAmount] = useState('');
+  const presetAmount = mode === 'minimum' ? amounts.minimum : mode === 'statement' ? amounts.statement : mode === 'current' ? amounts.current : '';
+  const amountLabel = mode === 'minimum'
+    ? 'Pago mínimo informado por el banco (DOP)'
+    : mode === 'statement'
+      ? 'Balance al corte (DOP)'
+      : 'Balance a la fecha (DOP)';
+
+  return <>
+    <Field label="Opción de pago" required>
+      <select name="payment_mode" value={mode} onChange={(event) => setMode(event.target.value as CardPaymentMode)}>
+        <option value="minimum" disabled={!amounts.minimum}>Pago mínimo informado por el banco</option>
+        <option value="statement" disabled={!amounts.statement}>Balance al corte</option>
+        <option value="current" disabled={!amounts.current}>Balance a la fecha</option>
+        <option value="other">Otro monto</option>
+      </select>
+    </Field>
+    {mode === 'other'
+      ? <Field label="Otro monto (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" value={otherAmount} onChange={(event) => setOtherAmount(event.target.value)} required /></Field>
+      : <Field label={amountLabel} required><Input name="amount" type="number" min="0.01" step="0.01" value={presetAmount} readOnly required /></Field>}
+  </>;
 }
 
 export function RecordsPage({ kind }: { kind: RecordKind }) {
@@ -167,7 +219,7 @@ function IncomePage() {
         <div className="form-grid">
           <Field label="Fuente / Concepto" required><Input name="source" defaultValue={editingIncome.source} required maxLength={160} /></Field>
           <Field label="Monto esperado (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={editingIncome.amount.replace(/[^0-9.]/g, '')} required /></Field>
-          <Field label="Fecha esperada" required><Input name="expected_date" type="date" defaultValue={editingIncome.expectedDate} required /></Field>
+          <Field label="Fecha esperada" required><Input name="expected_date" type="date" defaultValue={toDateInputValue(editingIncome.expectedDate) || today} required /></Field>
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
           <Button type="submit" appearance="primary" disabled={updateIncome.isPending}>{updateIncome.isPending ? 'Guardando…' : 'Actualizar ingreso'}</Button>
@@ -489,7 +541,7 @@ function ExpensesPage() {
               })}
             </select>
           </Field>
-          <Field label="Fecha del gasto" required><Input name="occurred_at" type="date" defaultValue={editingExpense.occurred_at} required /></Field>
+          <Field label="Fecha del gasto" required><Input name="occurred_at" type="date" defaultValue={toDateInputValue(editingExpense.occurred_at) || today} required /></Field>
           <Field label="Referencia / NCF (opcional)"><Input name="reference_number" defaultValue={editingExpense.reference_number || ''} maxLength={80} /></Field>
         </div>
         {isEditInsufficient && (
@@ -614,23 +666,23 @@ function CommitmentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [createCutDay, setCreateCutDay] = useState('');
   const [createGrace, setCreateGrace] = useState('');
-  const [editCutDay, setEditCutDay] = useState<string | null>(null);
-  const [editGrace, setEditGrace] = useState<string | null>(null);
   const [editingCommitment, setEditingCommitment] = useState<CommitmentRecord | null>(null);
   const [error, setError] = useState('');
   const [createCommitmentType, setCreateCommitmentType] = useState<CommitmentType>('utility');
   const [editCommitmentType, setEditCommitmentType] = useState<CommitmentType>('utility');
-  const [activeTab, setActiveTab] = useState<'all' | 'credit_card' | 'loan' | 'utility' | 'rent' | 'subscription' | 'insurance' | 'archived'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'credit_card' | 'loan' | 'utility' | 'rent' | 'subscription' | 'insurance' | 'archived'>('utility');
   const [search, setSearch] = useState('');
   const [institution, setInstitution] = useState('');
   const [sort, setSort] = useState<'due' | 'amount' | 'name'>('due');
   const [page, setPage] = useState(1);
+  const [paymentKeys, setPaymentKeys] = useState<Record<string, string>>({});
   const [cardPaymentPreview, setCardPaymentPreview] = useState<{
     commitment: CommitmentRecord;
     occurrenceId: string;
     accountId: string;
     amount: string;
     paidAt: string;
+    idempotencyKey: string;
   } | null>(null);
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -647,6 +699,14 @@ function CommitmentsPage() {
     refetchOnMount: 'always',
   });
   const accounts = useQuery({ queryKey: financialQueryKeys.accounts, queryFn: api.listAccounts, refetchOnMount: 'always' });
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, refetchOnMount: 'always' });
+  const payPeriod = getPayPeriod(settings.data?.payFrequency);
+  const financialPlan = useQuery({
+    queryKey: financialQueryKeys.financialPlan(payPeriod.days),
+    queryFn: () => api.getFinancialPlan(payPeriod.days),
+    enabled: settings.isSuccess,
+    refetchOnMount: 'always',
+  });
 
   const invalidateCommitmentData = async () => {
     await Promise.all(commitmentInvalidationKeys.map((queryKey) =>
@@ -671,16 +731,8 @@ function CommitmentsPage() {
     onError: (cause) => setError(cause.message),
   });
 
-  const pauseCommitment = useMutation({
-    mutationFn: (commitmentId: string) => api.pauseCommitment(commitmentId),
-    onSuccess: async () => {
-      await invalidateCommitmentData();
-    },
-    onError: (cause) => setError(cause.message),
-  });
-
-  const resumeCommitment = useMutation({
-    mutationFn: (commitmentId: string) => api.resumeCommitment(commitmentId),
+  const archiveCommitment = useMutation({
+    mutationFn: (commitmentId: string) => api.archiveCommitment(commitmentId),
     onSuccess: async () => {
       await invalidateCommitmentData();
     },
@@ -730,6 +782,7 @@ function CommitmentsPage() {
         institution: String(data.get('institution') || '') || null,
         current_balance: currentBal,
         statement_balance: stmtBal,
+        card_payment_mode: String(data.get('card_payment_mode') || 'statement') as 'minimum' | 'statement',
         minimum_payment: String(data.get('minimum_payment') || '') || null,
         statement_day: stmtDay,
         payment_grace_days: graceDays,
@@ -795,6 +848,8 @@ function CommitmentsPage() {
           institution: String(data.get('institution') || '') || null,
           current_balance: currentBal,
           statement_balance: stmtBal,
+          card_payment_mode: String(data.get('card_payment_mode') || 'statement') as 'minimum' | 'statement',
+          minimum_payment: String(data.get('minimum_payment') || '') || null,
           statement_day: stmtDay,
           payment_grace_days: graceDays,
         interest_rate: String(data.get('interest_rate') || '0'),
@@ -876,36 +931,56 @@ function CommitmentsPage() {
         return;
       }
       previewCardPayment.mutate({ debtId: selectedAccount.debtId, amount }, {
-        onSuccess: () => setCardPaymentPreview({
-          commitment,
-          occurrenceId: commitment.id!,
-          accountId,
-          amount,
-          paidAt,
-        }),
+        onSuccess: () => {
+          const operationKey = `card:${commitment.commitmentId}:${commitment.id}:${accountId}:${amount}:${paidAt}`;
+          const idempotencyKey = paymentKeys[operationKey] ?? createUuid();
+          setPaymentKeys((current) => ({ ...current, [operationKey]: idempotencyKey }));
+          setCardPaymentPreview({
+            commitment,
+            occurrenceId: commitment.id!,
+            accountId,
+            amount,
+            paidAt,
+            idempotencyKey,
+          });
+        },
       });
       return;
     }
 
+    const operationKey = `commitment:${commitment.commitmentId}:${commitment.id}:${accountId}:${amount}:${paidAt}`;
+    const idempotencyKey = paymentKeys[operationKey] ?? createUuid();
+    setPaymentKeys((current) => ({ ...current, [operationKey]: idempotencyKey }));
     pay.mutate({
       id: commitment.commitmentId!,
       occurrenceId: commitment.id!,
-      input: { amount, account_id: accountId, paid_at: paidAt, idempotency_key: createUuid() },
+      input: { amount, account_id: accountId, paid_at: paidAt, idempotency_key: idempotencyKey },
     }, { onSuccess: () => form.reset() });
   }
 
-  if (query.isPending || accounts.isPending) return <LoadingState />;
+  if (query.isPending || accounts.isPending || settings.isPending || financialPlan.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />;
   if (accounts.isError) return <ErrorState onRetry={() => void accounts.refetch()} />;
-  return <>
-    <div className="page-intro"><p>Gestiona obligaciones financieras de forma organizada y registra sus vencimientos, pagos y datos contractuales.</p><Button appearance="primary" onClick={() => setShowForm((value) => !value)}>{showForm ? 'Cerrar formulario' : activeTab === 'credit_card' ? 'Agregar tarjeta' : activeTab === 'loan' ? 'Agregar préstamo' : activeTab === 'rent' ? 'Agregar alquiler / vivienda' : activeTab === 'subscription' ? 'Agregar suscripción' : activeTab === 'insurance' ? 'Agregar seguro' : activeTab === 'utility' ? 'Agregar servicio / factura' : 'Agregar compromiso'}</Button></div>
+  if (settings.isError || financialPlan.isError) return <ErrorState onRetry={() => void Promise.all([settings.refetch(), financialPlan.refetch()])} />;
+  return <div className="payments-page">
+    <div className="payments-header">
+      <div><Subtitle1>Pagos y obligaciones</Subtitle1><Caption1>Organiza vencimientos, registra pagos y revisa coberturas.</Caption1></div>
+      {activeTab !== 'archived' && <Button appearance="primary" onClick={() => setShowForm((value) => !value)}>{showForm ? 'Cerrar formulario' : activeTab === 'credit_card' ? 'Agregar tarjeta' : activeTab === 'loan' ? 'Agregar préstamo' : activeTab === 'rent' ? 'Agregar alquiler / vivienda' : activeTab === 'subscription' ? 'Agregar suscripción' : activeTab === 'insurance' ? 'Agregar seguro' : activeTab === 'utility' ? 'Nuevo pago recurrente' : 'Nuevo pago'}</Button>}
+    </div>
     <TabList
       selectedValue={activeTab}
-      onTabSelect={(_, data) => { const nextTab = data.value as typeof activeTab; setActiveTab(nextTab); setPage(1); setEditingCommitment(null); setShowForm(false); setCreateCommitmentType(nextTab === 'credit_card' ? 'credit_card' : nextTab === 'loan' ? 'loan' : nextTab === 'rent' ? 'rent' : nextTab === 'subscription' ? 'subscription' : nextTab === 'insurance' ? 'insurance' : 'utility'); }}
+      onTabSelect={(_, data) => {
+        const nextTab = data.value as typeof activeTab;
+        queryClient.removeQueries({ queryKey: financialQueryKeys.commitments, exact: false });
+        setActiveTab(nextTab);
+        setPage(1);
+        setEditingCommitment(null);
+        setShowForm(false);
+        setCreateCommitmentType(nextTab === 'credit_card' ? 'credit_card' : nextTab === 'loan' ? 'loan' : nextTab === 'rent' ? 'rent' : nextTab === 'subscription' ? 'subscription' : nextTab === 'insurance' ? 'insurance' : 'utility');
+      }}
       aria-label="Categorías de compromisos"
-      style={{ marginBottom: '12px', overflowX: 'auto' }}
+      className="payments-tabs"
     >
-      <Tab value="all">Todos</Tab>
       <Tab value="credit_card">Tarjetas</Tab>
       <Tab value="loan">Préstamos</Tab>
       <Tab value="utility">Servicios y facturas</Tab>
@@ -914,16 +989,19 @@ function CommitmentsPage() {
       <Tab value="insurance">Seguros</Tab>
       <Tab value="archived">Archivados</Tab>
     </TabList>
-    <div className="commitment-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+    <div className="commitment-summary">
       {[
-        ['Pendiente del período', query.data.summary.pending_period],
-        ['Vencido', query.data.summary.overdue],
-        ['Pagado del período', query.data.summary.paid_period],
-        ['Deuda pendiente', query.data.summary.pending_debt],
-        ['Activos', String(query.data.summary.active_count)],
-      ].map(([label, value]) => <Card key={label} className="content-card" style={{ padding: '12px' }}><Caption1>{label}</Caption1><div style={{ marginTop: '5px', fontWeight: 700, color: 'var(--primary)' }}>{value}</div></Card>)}
+        [payPeriod.pendingLabel, formatMoney(financialPlan.data.summary?.pending_obligations ?? '0.00', 'DOP')],
+        ['Vencido', (() => {
+          const overdueMinor = sumDecimals((financialPlan.data?.obligations ?? []).filter((item) => item.overdue).map((item) => item.amount_pending ?? item.amount_due));
+          return overdueMinor === null ? 'Importe no disponible' : formatMoney(minorToDecimal(overdueMinor), 'DOP');
+        })()],
+        ['Pagado este mes', formatMoney(query.data.summary.paid_period, 'DOP')],
+        ['Deuda total registrada', formatMoney(query.data.summary.pending_debt, 'DOP')],
+        ['Obligaciones activas', String(query.data.summary.active_count)],
+      ].map(([label, value]) => <Card key={label} className="payment-metric"><Caption1>{label}</Caption1><strong>{value}</strong></Card>)}
     </div>
-    <Card className="inline-form" style={{ marginBottom: '12px' }}>
+    <Card className="payment-filters">
       <div className="form-grid">
         <Field label="Buscar"><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Nombre, institución o referencia" /></Field>
         <Field label="Institución"><Input value={institution} onChange={(event) => { setInstitution(event.target.value); setPage(1); }} placeholder="Banco o proveedor" /></Field>
@@ -931,10 +1009,11 @@ function CommitmentsPage() {
       </div>
     </Card>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-    {showForm && <div className="commitment-form-overlay" role="dialog" aria-modal="true"><Card className="inline-form commitment-form-panel">
-      <div><Subtitle1>{activeTab === 'credit_card' ? 'Agregar tarjeta' : activeTab === 'loan' ? 'Agregar préstamo' : activeTab === 'rent' ? 'Agregar alquiler / vivienda' : activeTab === 'subscription' ? 'Agregar suscripción' : activeTab === 'insurance' ? 'Agregar seguro' : 'Agregar servicio / factura'}</Subtitle1><Caption1>Completa los datos financieros manuales.</Caption1></div>
+    {showForm && <Card className="payment-create-expand">
+      <div><Subtitle1>{createCommitmentType === 'credit_card' ? 'Agregar tarjeta' : createCommitmentType === 'loan' ? 'Agregar préstamo' : createCommitmentType === 'rent' ? 'Agregar alquiler / vivienda' : createCommitmentType === 'subscription' ? 'Agregar suscripción' : createCommitmentType === 'insurance' ? 'Agregar seguro' : createCommitmentType === 'utility' ? 'Agregar servicio recurrente' : 'Agregar pago único'}</Subtitle1><Caption1>Completa primero los datos indispensables. Las opciones avanzadas quedan separadas.</Caption1></div>
       <form className="finance-form" onSubmit={submitCreate}>
         <div className="form-grid">
+          <Field label="Tipo de pago" required><select value={createCommitmentType} onChange={(event) => setCreateCommitmentType(event.target.value as CommitmentType)}><option value="loan">Préstamo</option><option value="credit_card">Tarjeta de crédito</option><option value="utility">Servicio recurrente</option><option value="rent">Alquiler / vivienda</option><option value="subscription">Suscripción</option><option value="insurance">Seguro</option><option value="other">Pago único</option></select></Field>
           <Field label={createCommitmentType === 'utility' ? 'Nombre de la factura' : createCommitmentType === 'subscription' ? 'Nombre del servicio' : createCommitmentType === 'credit_card' ? 'Nombre de la tarjeta' : createCommitmentType === 'loan' ? 'Nombre del préstamo' : 'Nombre'} required><Input name="name" required maxLength={160} placeholder={createCommitmentType === 'utility' ? 'ej. Electricidad' : createCommitmentType === 'subscription' ? 'ej. Streaming' : createCommitmentType === 'loan' ? 'ej. Préstamo de vehículo' : createCommitmentType === 'credit_card' ? 'ej. Visa Banco Popular' : 'ej. Alquiler'} /></Field>
 
           {createCommitmentType === 'credit_card' && <>
@@ -957,6 +1036,8 @@ function CommitmentsPage() {
 
             <Field label="Saldo facturado del último corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" placeholder="Balance del último estado de cuenta" /></Field>
             <Field label="Pago mínimo informado por el banco (DOP)"><Input name="minimum_payment" type="number" min="0" step="0.01" placeholder="Déjalo vacío si aún no lo tienes" /></Field>
+            <Field label="Pago recurrente" required><select name="card_payment_mode" defaultValue="statement"><option value="minimum">Pago mínimo = Pago mínimo informado por el banco</option><option value="statement">Balance al corte = Saldo facturado del último corte</option></select></Field>
+            <p className="form-help">Este importe se incluirá como pendiente en la fecha de vencimiento de pago de la tarjeta.</p>
             <Field label="Límite aprobado (DOP)"><Input name="approved_credit_limit" type="number" min="0" step="0.01" placeholder="Déjalo vacío si es desconocido" /></Field>
             <Field label="Sobregiro autorizado (DOP)"><Input name="authorized_overdraft_limit" type="number" min="0" step="0.01" placeholder="Déjalo vacío si es desconocido" /></Field>
             <Field label="Cobro por sobregiro al corte"><select name="overdraft_fee_type" defaultValue="none"><option value="none">Sin cargo configurado</option><option value="cutoff_fixed">Comisión fija por corte</option><option value="cutoff_percentage">Porcentaje sobre el exceso al corte</option><option value="cutoff_both">Porcentaje + comisión fija</option><option value="cutoff_daily">Interés diario sobre exceso (tasa anual / 365)</option></select></Field>
@@ -989,57 +1070,52 @@ function CommitmentsPage() {
         </div>
         <div className="commitment-form-actions"><Button type="button" appearance="subtle" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" appearance="primary" disabled={create.isPending}>{create.isPending ? 'Guardando…' : 'Guardar'}</Button></div>
       </form>
-    </Card></div>}
-    {editingCommitment && <div className="commitment-form-overlay" role="dialog" aria-modal="true"><Card className="inline-form commitment-form-panel">
-      <div><Subtitle1>Editar {editCommitmentType === 'credit_card' ? 'tarjeta' : editCommitmentType === 'loan' ? 'préstamo' : editCommitmentType === 'rent' ? 'alquiler / vivienda' : 'compromiso'}: {editingCommitment.name}</Subtitle1><Caption1>Los cambios se aplican manualmente sin modificar registros históricos.</Caption1></div>
-      <form className="finance-form" onSubmit={submitUpdate}>
-        <div className="form-grid">
-          <Field label="Nombre" required><Input name="name" defaultValue={editingCommitment.name} required maxLength={160} /></Field>
-
-          {editCommitmentType === 'credit_card' ? <>
-            <Field label="Referencia (últimos 4 dígitos)" required><Input name="reference_number" defaultValue={editingCommitment.referenceNumber ?? ''} required maxLength={4} inputMode="numeric" pattern="[0-9]{4}" /></Field>
-            <Field label="Banco emisor" required><Input name="institution" defaultValue={editingCommitment.institution ?? ''} required maxLength={160} /></Field>
-            <Field label="Saldo total utilizado (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={String(Number((editingCommitment.currentBalance ?? '0').replace(/[^\d.]/g, '')) || 0)} required /></Field>
-            <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" value={editCutDay ?? String(editingCommitment.statementDay ?? '')} onChange={(_, data) => setEditCutDay(data.value)} required /></Field>
-            <Field label="Días entre corte y vencimiento (según contrato)" required><Input name="payment_grace_days" type="number" min="1" max="31" value={editGrace ?? String(editingCommitment.paymentGraceDays ?? '')} onChange={(_, data) => setEditGrace(data.value)} required /></Field>
-            <Field label="Tasa de financiamiento anual (%)" required><Input name="interest_rate" type="number" min="0" max="100" step="0.001" defaultValue={editingCommitment.interestRate ?? ''} required /></Field>
-            <p className="form-help">Tasa anual informada por el banco, independiente del sobregiro. Los intereses se calculan sobre el saldo financiable, no sobre todos los consumos nuevos.</p>
-            <Field label="Saldo facturado del último corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" defaultValue={String(Number((editingCommitment.statementBalance ?? '0').replace(/[^\d.]/g, '')) || 0)} /></Field>
-            <Field label="Límite aprobado (DOP)"><Input name="approved_credit_limit" type="number" min="0" step="0.01" defaultValue={editingCommitment.approvedCreditLimit ? editingCommitment.approvedCreditLimit.replace('RD$ ', '').replaceAll(',', '') : ''} placeholder="Déjalo vacío si es desconocido" /></Field>
-            <Field label="Sobregiro autorizado (DOP)"><Input name="authorized_overdraft_limit" type="number" min="0" step="0.01" defaultValue={editingCommitment.authorizedOverdraftLimit ? editingCommitment.authorizedOverdraftLimit.replace('RD$ ', '').replaceAll(',', '') : ''} placeholder="Déjalo vacío si es desconocido" /></Field>
-            <Field label="Cobro por sobregiro al corte"><select name="overdraft_fee_type" defaultValue={editingCommitment.overdraftFeeType ?? 'none'}><option value="none">Sin cargo configurado</option><option value="cutoff_fixed">Comisión fija por corte</option><option value="cutoff_percentage">Porcentaje sobre el exceso al corte</option><option value="cutoff_both">Porcentaje + comisión fija</option><option value="cutoff_daily">Interés diario sobre exceso (tasa anual / 365)</option></select></Field>
-            <Field label="Comisión fija por corte (DOP)"><Input name="overdraft_fee_amount" type="number" min="0" step="0.01" defaultValue={editingCommitment.overdraftFeeAmount ?? ''} /></Field>
-            <Field label="Tasa de sobregiro (%)"><Input name="overdraft_fee_percentage" type="number" min="0" max="100" step="0.01" defaultValue={editingCommitment.overdraftFeePercentage ?? ''} /></Field>
-          </> : editCommitmentType === 'loan' ? <>
-            <Field label="Banco / prestamista" required><Input name="institution" defaultValue={editingCommitment.institution ?? ''} required maxLength={160} /></Field>
-            <Field label="Número de préstamo / referencia" required><Input name="reference_number" defaultValue={editingCommitment.referenceNumber ?? ''} required maxLength={80} /></Field>
-            <Field label="Saldo actual del préstamo (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={editingCommitment.currentBalance ? editingCommitment.currentBalance.replace('RD$ ', '').replaceAll(',', '') : ''} required /></Field>
-            <Field label="Tasa de interés anual (%)" required><Input name="interest_rate" type="number" min="0" max="100" step="0.001" defaultValue={editingCommitment.interestRate ?? ''} required /></Field>
-            <Field label="Monto de la cuota (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={String(Number(editingCommitment.amount.replace(/[^\d.]/g, '')) || 0)} required /></Field>
-            <Field label="Frecuencia de pago" required><select name="frequency" defaultValue={editingCommitment.frequency ?? 'monthly'}><option value="monthly">Mensual</option><option value="weekly">Semanal</option><option value="biweekly">Cada dos semanas</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select></Field>
-            <Field label="Fecha de vencimiento final"><Input name="maturity_date" type="date" defaultValue={editingCommitment.maturityDate ?? ''} /></Field>
-            <Field label="Próxima fecha de vencimiento" required><Input name="next_due_date" type="date" defaultValue={editingCommitment.dueDate?.slice(0, 10) || today} required /></Field>
-          </> : <>
-            <Field label="Monto a pagar (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={String(Number(editingCommitment.amount.replace(/[^\d.]/g, '')) || 0)} required /></Field>
-            <Field label="Frecuencia de pago" required><select name="frequency" defaultValue={editingCommitment.frequency ?? 'monthly'}><option value="monthly">Mensual</option><option value="once">Una sola vez</option><option value="weekly">Semanal</option><option value="biweekly">Cada dos semanas</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select></Field>
-            <Field label="Próxima fecha de vencimiento" required><Input name="next_due_date" type="date" defaultValue={editingCommitment.dueDate?.slice(0, 10) || today} required /></Field>
-          </>}
-
-          <Field label="Notas adicionales"><Input name="notes" defaultValue={editingCommitment.notes ?? ''} maxLength={2000} /></Field>
-        </div>
-        <div className="commitment-form-actions"><Button type="button" appearance="subtle" onClick={() => setEditingCommitment(null)}>Cancelar</Button><Button type="submit" appearance="primary" disabled={updateCommitment.isPending}>{updateCommitment.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div>
-      </form>
-    </Card></div>}
+    </Card>}
     {accounts.data.length === 0 && <MessageBar intent="warning"><MessageBarBody>Crea una cuenta antes de registrar pagos de compromisos.</MessageBarBody></MessageBar>}
     {query.data.commitments.length === 0 ? <EmptyState label={activeTab === 'archived' ? 'No hay compromisos archivados.' : 'No hay compromisos que coincidan con los filtros.'} /> :
-      <section className="record-list">{query.data.commitments.map((item) => {
+      <section className="payments-list">{query.data.commitments.map((item) => {
         const linkedOccurrences = query.data.occurrences.filter((occurrence) => occurrence.commitmentId === item.id);
         const nextOccurrence = linkedOccurrences.find((occurrence) => occurrence.status !== 'Pagado') ?? linkedOccurrences[0];
         const remaining = nextOccurrence?.remainingAmount ?? item.amount;
         const paid = nextOccurrence?.status === 'Pagado' || remaining === 'RD$ 0.00';
-        return <Card className="content-card record-card" key={item.id}>
+        const coverage = financialPlan.data?.obligations.find((obligation) => obligation.name === item.name && obligation.due_date === (item.dueDateIso ?? toDateInputValue(item.dueDate)));
+        return <Card className="payment-obligation-card" key={item.id ?? item.commitmentId ?? `${item.name}-${item.dueDate}`}>
+          {editingCommitment?.id === item.id ? <Card className="payment-inline-edit">
+            <div className="payment-inline-edit-header"><Subtitle1>Editar {item.name}</Subtitle1><Caption1>Los cambios se aplican a futuros vencimientos, no al historial.</Caption1></div>
+            <form className="finance-form" onSubmit={submitUpdate}>
+              <div className="form-grid">
+                <Field label="Nombre" required><Input name="name" defaultValue={item.name} required /></Field>
+                {item.type === 'credit_card' && <>
+                  <Field label="Institución financiera"><Input name="institution" defaultValue={item.institution ?? ''} maxLength={160} /></Field>
+                  <Field label="Referencia (últimos 4 dígitos)" required><Input name="reference_number" defaultValue={item.referenceNumber ?? ''} required maxLength={4} inputMode="numeric" pattern="[0-9]{4}" /></Field>
+                  <Field label="Saldo total utilizado (DOP)" required><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={String(Number((item.currentBalance ?? '0').replace(/[^0-9.]/g, '')) || 0)} required /></Field>
+                  <Field label="Día de corte (1-31)" required><Input name="statement_day" type="number" min="1" max="31" defaultValue={String(item.statementDay ?? 1)} required /></Field>
+                  <Field label="Días entre corte y vencimiento" required><Input name="payment_grace_days" type="number" min="1" max="31" defaultValue={String(item.paymentGraceDays ?? 21)} required /></Field>
+                  <Field label="Tasa de financiamiento anual (%)" required><Input name="interest_rate" type="number" min="0" max="100" step="0.001" defaultValue={item.interestRate ?? '0'} required /></Field>
+                  <Field label="Saldo facturado del último corte (DOP)"><Input name="statement_balance" type="number" min="0" step="0.01" defaultValue={item.statementBalance?.replace(/[^0-9.]/g, '') ?? item.currentBalance?.replace(/[^0-9.]/g, '') ?? ''} /></Field>
+                  <Field label="Pago mínimo informado por el banco (DOP)"><Input name="minimum_payment" type="number" min="0" step="0.01" defaultValue={item.minimumPayment?.replace(/[^0-9.]/g, '') ?? ''} /></Field>
+                  <Field label="Pago recurrente" required><select name="card_payment_mode" defaultValue={item.cardPaymentMode ?? 'statement'}><option value="minimum">Pago mínimo = Pago mínimo informado por el banco</option><option value="statement">Balance al corte = Saldo facturado del último corte</option></select></Field>
+                  <Field label="Límite aprobado (DOP)"><Input name="approved_credit_limit" type="number" min="0" step="0.01" defaultValue={item.approvedCreditLimit?.replace(/[^0-9.]/g, '') ?? ''} /></Field>
+                  <Field label="Sobregiro autorizado (DOP)"><Input name="authorized_overdraft_limit" type="number" min="0" step="0.01" defaultValue={item.authorizedOverdraftLimit?.replace(/[^0-9.]/g, '') ?? ''} /></Field>
+                  <Field label="Cobro por sobregiro al corte"><select name="overdraft_fee_type" defaultValue={item.overdraftFeeType ?? 'none'}><option value="none">Sin cargo configurado</option><option value="cutoff_fixed">Comisión fija por corte</option><option value="cutoff_percentage">Porcentaje sobre el exceso al corte</option><option value="cutoff_both">Porcentaje + comisión fija</option><option value="cutoff_daily">Interés diario sobre exceso (tasa anual / 365)</option><option value="fixed">Comisión fija</option><option value="percentage">Porcentaje</option></select></Field>
+                  <Field label="Comisión fija por corte (DOP)"><Input name="overdraft_fee_amount" type="number" min="0" step="0.01" defaultValue={item.overdraftFeeAmount ?? '0'} /></Field>
+                  <Field label="Tasa de sobregiro (%)"><Input name="overdraft_fee_percentage" type="number" min="0" max="100" step="0.01" defaultValue={item.overdraftFeePercentage ?? '0'} /></Field>
+                </>}
+                {item.type === 'loan' && <><Field label="Saldo pendiente (DOP)"><Input name="current_balance" type="number" min="0" step="0.01" defaultValue={item.currentBalance ? item.currentBalance.replace(/[^0-9.]/g, '') : ''} /></Field><Field label="Institución"><Input name="institution" defaultValue={item.institution ?? ''} /></Field><Field label="Tasa anual (%)"><Input name="interest_rate" type="number" min="0" max="100" step="0.001" defaultValue={item.interestRate ?? ''} /></Field></>}
+                {item.type !== 'credit_card' && <>
+                  <Field label="Monto (DOP)" required><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={String(Number(item.amount.replace(/[^0-9.]/g, '')) || 0)} required /></Field>
+                  <Field label="Frecuencia" required><select name="frequency" defaultValue={item.frequency ?? 'monthly'}><option value="monthly">Mensual</option><option value="once">Una sola vez</option><option value="weekly">Semanal</option><option value="biweekly">Cada dos semanas</option><option value="quarterly">Trimestral</option><option value="yearly">Anual</option></select></Field>
+                  <Field label="Próximo vencimiento" required><Input name="next_due_date" type="date" defaultValue={item.dueDateIso ?? today} required /></Field>
+                </>}
+                <Field label="Notas"><Input name="notes" defaultValue={item.notes ?? ''} maxLength={2000} /></Field>
+              </div>
+              <div className="payment-inline-edit-actions"><Button type="button" appearance="subtle" onClick={() => setEditingCommitment(null)}>Cancelar</Button><Button type="submit" appearance="primary" disabled={updateCommitment.isPending}>{updateCommitment.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div>
+            </form>
+          </Card> : <>
           <div className="record-heading"><div><Subtitle1>{item.name}</Subtitle1><Caption1>{item.dueDate} · {item.isActive === false ? 'Archivado' : 'Activo'}</Caption1></div><strong>{remaining} a vencer</strong></div>
           <Caption1>{commitmentTypes.find((type) => type.value === item.type)?.label ?? 'Compromiso'}{item.category ? ` · ${item.category}` : ''}{item.institution ? ` · ${item.institution}` : ''}</Caption1>
+          {item.type === 'credit_card' && item.cardPaymentMode === 'minimum' && !item.minimumPaymentConfirmed && <MessageBar intent="warning" style={{ marginTop: '10px' }}><MessageBarBody>Informa el pago mínimo del estado de cuenta para incluirlo como pendiente en su fecha de vencimiento.</MessageBarBody></MessageBar>}
+          {nextOccurrence && <div className="payment-coverage-badge"><span>Estado de cobertura</span><strong>{coverage?.coverage_status === 'covered' ? 'Cubierto' : coverage?.coverage_status === 'partially_covered' ? 'Cobertura parcial' : coverage?.coverage_status === 'uncovered' ? 'Sin cobertura' : 'Por calcular'}</strong></div>}
           <Caption1>Importe: {item.amount} · Frecuencia: {item.frequency === 'once' ? 'Una sola vez' : item.frequency ?? 'Mensual'}{(item.type === 'subscription' || item.type === 'insurance') && item.frequency !== 'once' ? ` · Costo anual estimado: ${(() => { const amount = Number(item.amount.replace(/[^\d.]/g, '')); const multiplier = item.frequency === 'weekly' ? 52 : item.frequency === 'biweekly' ? 26 : item.frequency === 'monthly' ? 12 : item.frequency === 'quarterly' ? 4 : item.frequency === 'yearly' ? 1 : 0; return multiplier ? `RD$ ${(amount * multiplier).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No calculable'; })()}` : ''}</Caption1>
           {item.type === 'credit_card' && (item.limitStatus === 'unknown' || item.limitStatus === 'pending_verification') && (
             <MessageBar intent="warning" style={{ marginTop: '10px' }}>
@@ -1053,7 +1129,7 @@ function CommitmentsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '8px' }}>
                 <Card className="content-card" style={{ padding: '10px' }}><Caption1>Límite aprobado</Caption1><strong>{item.approvedCreditLimit ?? 'No confirmado'}</strong></Card>
                 <Card className="content-card" style={{ padding: '10px' }}><Caption1>Sobregiro autorizado</Caption1><strong>{item.authorizedOverdraftLimit ?? 'No confirmado'}</strong></Card>
-                <Card className="content-card" style={{ padding: '10px' }}><Caption1>Fecha de corte</Caption1><strong>{item.statementDay ? `Día ${item.statementDay}` : 'No registrada'}</strong></Card>
+                <Card className="content-card" style={{ padding: '10px' }}><Caption1>Próximo corte</Caption1><strong>{(() => { const preview = cardCyclePreview(item.statementDay ?? 0, item.paymentGraceDays ?? 25); return preview?.nextCutoff || 'No registrado'; })()}</strong></Card>
                 <Card className="content-card" style={{ padding: '10px' }}><Caption1>Próximo vencimiento</Caption1><strong>{item.dueDate}</strong></Card>
               </div>
               {item.specialRulesSource && <Caption1 style={{ display: 'block', marginTop: '8px' }}>Fuente contractual: {item.specialRulesSource}</Caption1>}
@@ -1079,15 +1155,17 @@ function CommitmentsPage() {
           )}
           <details className="debt-action">
             <summary>Historial de vencimientos y pagos</summary>
-            {linkedOccurrences.length === 0 ? <Caption1>No hay vencimientos registrados.</Caption1> : <div className="record-list" style={{ marginTop: '8px' }}>{linkedOccurrences.map((occurrence) => <Card key={occurrence.id} className="content-card" style={{ padding: '10px' }}><div className="record-heading"><div><Caption1>{occurrence.dueDate}</Caption1><strong>{occurrence.status}</strong></div><strong>{occurrence.remainingAmount ?? occurrence.amount}</strong></div></Card>)}</div>}
+            {linkedOccurrences.length === 0 ? <Caption1>No hay vencimientos registrados.</Caption1> : <div className="record-list" style={{ marginTop: '8px' }}>{linkedOccurrences.map((occurrence, occurrenceIndex) => <Card key={occurrence.id ?? `${occurrence.commitmentId}-${occurrence.dueDate}-${occurrenceIndex}`} className="content-card" style={{ padding: '10px' }}><div className="record-heading"><div><Caption1>{occurrence.dueDate}</Caption1><strong>{occurrence.status}</strong></div><strong>{occurrence.remainingAmount ?? occurrence.amount}</strong></div></Card>)}</div>}
           </details>
-          {!paid && nextOccurrence && accounts.data.length > 0 && <details className="debt-action">
-            <summary>Registrar pago de compromiso</summary>
+          {!item.standaloneDebt && !paid && nextOccurrence && accounts.data.length > 0 && <details className="debt-action">
+            <summary>{item.type === 'credit_card' ? 'Pagar Tarjeta' : 'Registrar pago de compromiso'}</summary>
             <form className="debt-action-form" onSubmit={(event) => submitPayment(event, nextOccurrence)}>
-              <Field label={item.type === 'loan' || item.type === 'credit_card' ? 'Monto a pagar (DOP; se permiten abonos)' : 'Monto a pagar (DOP)'} required><Input name="amount" type="number" min="0.01" step="0.01" max={item.type === 'loan' || item.type === 'credit_card' ? undefined : Number(remaining.replace(/[^\d.]/g, ''))} defaultValue={Number(remaining.replace(/[^\d.]/g, '')).toFixed(2)} required /></Field>
+              {item.type === 'credit_card'
+                ? <CreditCardPaymentFields card={item} />
+                : <Field label={item.type === 'loan' ? 'Monto a pagar (DOP; se permiten abonos)' : 'Monto a pagar (DOP)'} required><Input name="amount" type="number" min="0.01" step="0.01" max={item.type === 'loan' ? undefined : Number(remaining.replace(/[^\d.]/g, ''))} defaultValue={Number(remaining.replace(/[^\d.]/g, '')).toFixed(2)} required /></Field>}
               <Field label="Pagar desde la cuenta" required><select name="account_id" required defaultValue=""><option value="" disabled>Seleccionar cuenta</option>{accounts.data.filter((account) => item.type === 'loan' || item.type === 'credit_card' ? account.type !== 'credit_card' : true).map((account) => <option key={account.id} value={account.id} disabled={account.type !== 'credit_card' && parseNumericBalance(account.balance) < Number(remaining.replace(/[^\d.]/g, ''))}>{account.name}{account.type === 'credit_card' ? ' (Tarjeta)' : ` (${account.balance})`}</option>)}</select></Field>
               <Field label="Fecha de pago" required><Input name="paid_at" type="date" defaultValue={today} required /></Field>
-              <Button type="submit" appearance="primary" disabled={pay.isPending}>{pay.isPending ? 'Procesando pago…' : 'Registrar pago'}</Button>
+              <Button type="submit" appearance="primary" disabled={pay.isPending}>{pay.isPending ? 'Procesando pago…' : item.type === 'credit_card' ? 'Pagar Tarjeta' : 'Registrar pago'}</Button>
             </form>
           </details>}
           {cardPaymentPreview && cardPaymentPreview.commitment.id === item.id && previewCardPayment.data?.purchase_amount === cardPaymentPreview.amount && (
@@ -1110,25 +1188,27 @@ function CommitmentsPage() {
                     amount: cardPaymentPreview.amount,
                     account_id: cardPaymentPreview.accountId,
                     paid_at: cardPaymentPreview.paidAt,
-                    idempotency_key: createUuid(),
+                    idempotency_key: cardPaymentPreview.idempotencyKey,
                   },
                 })}>{pay.isPending ? 'Procesando…' : 'Confirmar pago'}</Button>
                 <Button appearance="subtle" disabled={pay.isPending} onClick={() => setCardPaymentPreview(null)}>Cancelar</Button>
               </div>
             </Card>
           )}
-          {item.isActive !== false ? <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-            <Button appearance="subtle" size="small" onClick={() => { setEditCommitmentType(item.type ?? 'utility'); setEditingCommitment(item); }}>Editar</Button>
-            <Button appearance="subtle" size="small" disabled={pauseCommitment.isPending} onClick={() => pauseCommitment.mutate(item.id!)}>Pausar</Button>
-            <Button appearance="subtle" size="small" disabled={deleteCommitment.isPending} onClick={() => { if (window.confirm(`¿Estás seguro de archivar el compromiso "${item.name}"?`)) deleteCommitment.mutate(item.id!); }}>Archivar</Button>
-          </div> : <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-            <Button appearance="subtle" size="small" disabled={resumeCommitment.isPending} onClick={() => resumeCommitment.mutate(item.id!)}>{resumeCommitment.isPending ? 'Reanudando…' : 'Reanudar'}</Button>
-          </div>}
+          {!item.standaloneDebt && item.isActive !== false ? <div className="payment-row-actions">
+            <Button appearance="secondary" size="small" onClick={() => { setEditCommitmentType(item.type ?? 'utility'); setEditingCommitment(item); }}>Editar</Button>
+            <Button appearance="subtle" size="small" disabled={archiveCommitment.isPending || (!paid && Boolean(nextOccurrence))} onClick={() => {
+              if (window.confirm(`¿Archivar el compromiso "${item.name}"? Solo puede archivarse sin saldo ni pagos pendientes.`)) {
+                archiveCommitment.mutate(item.commitmentId ?? item.id!);
+              }
+            }}>Archivar</Button>
+            <Button appearance="subtle" size="small" disabled={deleteCommitment.isPending} onClick={() => { if (window.confirm(`¿Eliminar el compromiso "${item.name}"? Se conservará el historial financiero.`)) deleteCommitment.mutate(item.commitmentId ?? item.id!); }}>Eliminar</Button>
+          </div> : null}
+          </>}
         </Card>;
       })}</section>}
     {query.data.meta.last_page > 1 && <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px' }}><Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</Button><Caption1>Página {query.data.meta.current_page} de {query.data.meta.last_page}</Caption1><Button disabled={page >= query.data.meta.last_page} onClick={() => setPage((value) => value + 1)}>Siguiente</Button></div>}
-    <DebtBalancesSection />
-  </>;
+  </div>;
 }
 
 function CalendarPage() {
@@ -1183,8 +1263,8 @@ function TransactionsPage() {
       <div className="form-grid">
         <Field label="Buscar descripción"><Input value={draftFilters.q} onChange={(event) => setDraftFilters({ ...draftFilters, q: event.target.value })} placeholder="ej. Alquiler o Salario" /></Field>
         <Field label="Cuenta"><select value={draftFilters.account_id} onChange={(event) => setDraftFilters({ ...draftFilters, account_id: event.target.value })}><option value="">Todas las cuentas</option>{accounts.data.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></Field>
-        <Field label="Desde"><Input type="date" value={draftFilters.from} onChange={(event) => setDraftFilters({ ...draftFilters, from: event.target.value })} /></Field>
-        <Field label="Hasta"><Input type="date" value={draftFilters.to} onChange={(event) => setDraftFilters({ ...draftFilters, to: event.target.value })} /></Field>
+        <Field label="Desde"><Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.from) ? draftFilters.from : ''} onChange={(event) => setDraftFilters({ ...draftFilters, from: event.target.value })} /></Field>
+        <Field label="Hasta"><Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.to) ? draftFilters.to : ''} onChange={(event) => setDraftFilters({ ...draftFilters, to: event.target.value })} /></Field>
       </div>
       <Button type="submit" appearance="primary">Aplicar filtros</Button>
       <Button type="button" onClick={() => { const cleared = { from: '', to: '', account_id: '', q: '' }; setDraftFilters(cleared); setFilters(cleared); }}>Limpiar filtros</Button>
@@ -1301,12 +1381,14 @@ function AccountsPage() {
     checking: 'Cuenta Corriente',
     savings: 'Cuenta de Ahorros',
     cash: 'Efectivo',
+    credit_card: 'Tarjeta de crédito',
     other: 'Otra',
   };
 
   return <>
     <div className="page-intro">
-      <p>Administra tus cuentas financieras (Ahorro, Corriente, Efectivo), sus saldos y conciliaciones auditadas.</p>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap"}}><Link to="/transfers">Transferencias</Link><Link to="/transactions">Historial de movimientos</Link></div>
+      <p>Administra tus cuentas financieras. Las tarjetas vinculadas se gestionan desde Pagos.</p>
       <Button appearance="primary" onClick={() => setShowForm((value) => !value)}>{showForm ? 'Cancelar' : 'Agregar cuenta'}</Button>
     </div>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
@@ -1343,7 +1425,7 @@ function AccountsPage() {
           <div><Subtitle1>{account.name}</Subtitle1><Caption1>{typeLabels[account.type] ?? account.type}{account.institution ? ` · ${account.institution}` : ''}</Caption1></div>
           <strong>{account.balance}</strong>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        {account.type === 'credit_card' ? <Caption1>Tarjeta vinculada. Adminístrala desde <Link to="/payments">Pagos</Link>.</Caption1> : <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <details className="debt-action" style={{ flex: 1, minWidth: '200px' }}>
             <summary>Conciliar saldo real</summary>
             <form className="debt-action-form" onSubmit={(event) => submitReconcile(event, account)}>
@@ -1360,7 +1442,7 @@ function AccountsPage() {
               }
             }}>Eliminar</Button>
           </div>
-        </div>
+        </div>}
       </Card>)}</section>}
   </>;
 }

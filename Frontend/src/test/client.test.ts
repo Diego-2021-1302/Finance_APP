@@ -178,24 +178,19 @@ describe('live API client', () => {
     expect(JSON.parse(String(insightsCall[1]?.body))).toEqual({ consent: true });
   });
 
-  it('pauses and resumes a commitment through live API routes', async () => {
+  it('archives a commitment through the live API route', async () => {
     const fetchStub = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: { id: 21, name: 'Internet', type: 'utility', amount: '2450.00', frequency: 'monthly', next_due_date: '2026-12-20', is_active: false },
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: { id: 21, name: 'Internet', type: 'utility', amount: '2450.00', frequency: 'monthly', next_due_date: '2026-12-20', is_active: true },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchStub);
     storedValues.set('finance-app.access-token', 'commitment-token');
 
     const { liveClient } = await import('../api/client');
-    await expect(liveClient.pauseCommitment('21')).resolves.toMatchObject({ id: '21', isActive: false });
-    await expect(liveClient.resumeCommitment('21')).resolves.toMatchObject({ id: '21', isActive: true });
+    await expect(liveClient.archiveCommitment('21')).resolves.toMatchObject({ id: '21', isActive: false });
 
     expect(fetchStub.mock.calls.map((call) => call[0])).toEqual([
-      '/api/v1/commitments/21/pause',
-      '/api/v1/commitments/21/resume',
+      '/api/v1/commitments/21/archive',
     ]);
   });
 

@@ -30,6 +30,7 @@ export function PiggyBankPage() {
     queryKey: ['piggy-bank', selectedMonth],
     queryFn: () => api.getPiggyBankData(selectedMonth),
   });
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
 
   const depositMutation = useMutation({
     mutationFn: (input: { amount: string; type: 'deposit' | 'withdrawal'; note?: string }) =>
@@ -152,7 +153,7 @@ export function PiggyBankPage() {
               title="Toca para ahorrar, mantén presionado para retirar"
             >
               <div className="piggy-logo-glow-ring" />
-              <img src="/logo.png" alt="Alcancía Ghost Finance" className="piggy-logo-image" />
+              <img src={settingsQuery.data?.piggyBankPhotoUrl ?? '/logo.png'} alt="Alcancía Ghost Finance" className="piggy-logo-image" />
             </div>
 
             <div className="piggy-sub-caption">

@@ -229,7 +229,7 @@ class FinancialFlowTest extends TestCase
         $this->assertNotEmpty($response->json('commitments.0.amortization.schedule'));
     }
 
-    public function test_commitment_can_pause_resume_without_duplicate_or_historical_loss(): void
+    public function test_commitment_can_only_archive_without_pending_occurrences(): void
     {
         $user = User::factory()->create();
         $token = $user->createToken('test-token')->plainTextToken;
@@ -258,19 +258,19 @@ class FinancialFlowTest extends TestCase
             'status' => 'scheduled',
         ]);
 
-        $pause = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/pause");
-        $pause->assertOk()->assertJsonPath('data.is_active', false);
-
-        $this->assertDatabaseCount('commitment_occurrences', 1);
-        $this->assertDatabaseHas('commitment_occurrences', [
-            'commitment_id' => $commitment->id,
-            'status' => 'paid',
-        ]);
-
-        $resume = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/resume");
-        $resume->assertOk()->assertJsonPath('data.is_active', true);
+        $pause = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/archive");
+        $this->assertSame(422, $pause->status(), $pause->getContent());
 
         $this->assertDatabaseCount('commitment_occurrences', 2);
+
+        CommitmentOccurrence::query()
+            ->where('commitment_id', $commitment->id)
+            ->where('status', 'scheduled')
+            ->update(['status' => 'paid']);
+
+        $archive = $this->withToken($token)->postJson("/api/v1/commitments/{$commitment->id}/archive");
+        $archive->assertOk()->assertJsonPath('data.is_active', false);
+
         $this->assertDatabaseCount('commitment_occurrences', 2);
     }
 

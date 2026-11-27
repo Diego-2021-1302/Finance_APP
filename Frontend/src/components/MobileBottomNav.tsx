@@ -6,8 +6,7 @@ import {
 import {
   HomeRegular, HomeFilled,
   CalendarRegular, CalendarFilled,
-  ChatRegular, ChatFilled,
-  DataBarVerticalRegular, DataBarVerticalFilled,
+  MoneyRegular,
   NavigationRegular,
   DismissRegular,
 } from '@fluentui/react-icons';
@@ -48,19 +47,24 @@ export function MobileBottomNav({
       icon: location.pathname === '/' ? <HomeFilled /> : <HomeRegular />,
     },
     {
-      to: '/commitments',
-      label: 'Agenda',
-      icon: location.pathname === '/commitments' ? <CalendarFilled /> : <CalendarRegular />,
+      to: '/income',
+      label: 'Ingresos',
+      icon: <MoneyRegular />,
     },
     {
-      to: '/chat',
-      label: 'Asistente',
-      icon: location.pathname === '/chat' ? <ChatFilled /> : <ChatRegular />,
+      to: '/expenses',
+      label: 'Gastos',
+      icon: <MoneyRegular />,
     },
     {
-      to: '/reports',
-      label: 'Reportes',
-      icon: location.pathname === '/reports' ? <DataBarVerticalFilled /> : <DataBarVerticalRegular />,
+      to: '/accounts',
+      label: 'Cuentas',
+      icon: <MoneyRegular />,
+    },
+    {
+      to: '/payments',
+      label: 'Pagos',
+      icon: location.pathname === '/payments' ? <CalendarFilled /> : <CalendarRegular />,
     },
   ];
 

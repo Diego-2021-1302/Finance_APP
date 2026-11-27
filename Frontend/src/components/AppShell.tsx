@@ -4,11 +4,12 @@ import {
   Avatar, Button, Divider, TabList, Tab, ToolbarButton, Body1, Badge,
 } from '@fluentui/react-components';
 import {
-  HomeRegular, MoneyRegular, CalendarRegular, ArrowSwapRegular,
-  DataBarVerticalRegular, SettingsRegular,
-  WalletRegular, NavigationRegular, SparkleRegular,
+  HomeRegular, MoneyRegular, CalendarRegular,
+  WalletRegular, NavigationRegular, PersonMoneyRegular, SettingsRegular, CalculatorRegular,
 } from '@fluentui/react-icons';
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { useAppTheme } from '../theme/ThemeContext';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
@@ -25,45 +26,25 @@ interface NavSection {
 }
 
 const navSections: NavSection[] = [
-  {
-    title: 'Visión General',
-    items: [
-      { to: '/', label: 'Inicio', icon: <HomeRegular /> },
-      { to: '/chat', label: 'Asistente IA', icon: <SparkleRegular />, badge: 'IA' },
-      { to: '/piggy-bank', label: 'Alcancía', icon: <MoneyRegular /> },
-    ],
-  },
-  {
-    title: 'Operaciones',
-    items: [
-      { to: '/accounts', label: 'Cuentas', icon: <WalletRegular /> },
-      { to: '/income', label: 'Ingresos', icon: <MoneyRegular /> },
-      { to: '/expenses', label: 'Gastos Directos', icon: <MoneyRegular /> },
-      { to: '/transfers', label: 'Transferencias', icon: <ArrowSwapRegular /> },
-    ],
-  },
-  {
-    title: 'Planificación',
-    items: [
-      { to: '/commitments', label: 'Compromisos', icon: <CalendarRegular /> },
-      { to: '/planning', label: 'Presupuestos y reservas', icon: <WalletRegular /> },
-      { to: '/calendar', label: 'Calendario', icon: <CalendarRegular /> },
-      { to: '/transactions', label: 'Transacciones', icon: <ArrowSwapRegular /> },
-    ],
-  },
-  {
-    title: 'Sistema',
-    items: [
-      { to: '/reports', label: 'Reportes', icon: <DataBarVerticalRegular /> },
-      { to: '/settings', label: 'Configuración', icon: <SettingsRegular /> },
-    ],
-  },
+  { title: 'Principal', items: [
+    { to: '/', label: 'Inicio', icon: <HomeRegular /> },
+    { to: '/income', label: 'Ingresos', icon: <PersonMoneyRegular /> },
+    { to: '/expenses', label: 'Gastos', icon: <MoneyRegular /> },
+    { to: '/payments', label: 'Pagos', icon: <CalendarRegular /> },
+    { to: '/accounts', label: 'Cuentas', icon: <WalletRegular /> },
+  ] },
+  { title: 'Herramientas', items: [
+    { to: '/piggy-bank', label: 'Ahorros', icon: <MoneyRegular /> },
+    { to: '/interests', label: 'Intereses', icon: <CalculatorRegular /> },
+    { to: '/settings', label: 'Configuración', icon: <SettingsRegular /> },
+  ] },
 ];
 
 const allNavItems = navSections.flatMap((section) => section.items);
 
 export function AppShell() {
   const { user, logout } = useAuth();
+  const preferences = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const { isDark } = useAppTheme();
   const location = useLocation();
   const navigate = useNavigate();
@@ -123,7 +104,7 @@ export function AppShell() {
             {currentDateFormatted}
           </div>
           <div className="user-profile-widget desktop-only">
-            <Avatar name={user?.name ?? 'Usuario'} size={32} color="brand" />
+            <Avatar name={user?.name ?? 'Usuario'} image={preferences.data?.profilePhotoUrl ? { src: preferences.data.profilePhotoUrl } : undefined} size={32} color="brand" />
             <div className="user-profile-details">
               <span className="user-profile-name">{user?.name ?? 'Usuario'}</span>
               <span className="user-profile-currency">DOP · RD$</span>
@@ -195,7 +176,7 @@ export function AppShell() {
         onCloseMobileMenu={() => setMobileMenuOpen(false)}
         onNavigate={handleNavClick}
         onLogout={logout}
-        moreItems={allNavItems.filter((item) => !['/', '/commitments', '/chat', '/reports'].includes(item.to))}
+        moreItems={allNavItems.filter((item) => !['/', '/payments', '/accounts', '/expenses', '/income'].includes(item.to))}
         userName={user?.name ?? 'Usuario'}
         userEmail={user?.email}
       />

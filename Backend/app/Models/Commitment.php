@@ -11,7 +11,7 @@ class Commitment extends Model
     protected $fillable = [
         'user_id', 'account_id', 'debt_id', 'name', 'type', 'amount', 'frequency', 'next_due_date', 'is_active', 'notes',
         'reference_number', 'institution', 'opening_balance', 'current_balance', 'interest_rate', 'category', 'maturity_date',
-        'statement_day', 'payment_grace_days', 'statement_balance', 'credit_limit',
+        'statement_day', 'payment_grace_days', 'statement_balance', 'card_payment_mode', 'credit_limit',
         'approved_credit_limit', 'authorized_overdraft_limit', 'limit_status', 'overdraft_fee_type', 'overdraft_fee_amount', 'overdraft_fee_percentage', 'overdraft_fee_tax_rate',
         'cash_advance_interest_rate', 'moratorium_interest_rate', 'membership_fee_amount', 'insurance_fee_amount',
         'closing_fee_percentage', 'late_fee_percentage', 'late_fee_fixed', 'amortization_type', 'term_months',

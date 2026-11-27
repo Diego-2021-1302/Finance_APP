@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Debt extends Model
 {
     protected $fillable = [
-        'user_id', 'account_id', 'commitment_id', 'name', 'kind', 'outstanding_amount', 'minimum_payment', 'minimum_payment_confirmed', 'due_date', 'last_four',
+        'user_id', 'account_id', 'commitment_id', 'name', 'kind', 'outstanding_amount', 'minimum_payment', 'minimum_payment_confirmed', 'due_date', 'last_four', 'reference_number', 'institution', 'maturity_date',
         'statement_day', 'payment_grace_days', 'statement_balance', 'credit_limit',
         'approved_credit_limit', 'authorized_overdraft_limit', 'limit_status', 'overdraft_fee_type', 'overdraft_fee_amount', 'overdraft_fee_percentage', 'overdraft_fee_tax_rate',
         'cash_advance_interest_rate', 'moratorium_interest_rate', 'membership_fee_amount', 'insurance_fee_amount',
@@ -46,6 +46,7 @@ class Debt extends Model
             'statement_day' => 'integer',
             'payment_grace_days' => 'integer',
             'due_date' => 'date',
+            'maturity_date' => 'date',
             'special_rules_documented' => 'boolean',
             'issued_at' => 'date',
             'annual_fee' => 'decimal:2',
